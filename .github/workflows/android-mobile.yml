@@ -1,0 +1,31 @@
+name: Build Android Control APK
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'mobile-app/**'
+      - '.github/workflows/android-mobile.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build control APK
+        working-directory: mobile-app
+        run: gradle --no-daemon assembleDebug
+      - name: Upload control APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Games-Planet-QR-Control-APK
+          path: mobile-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
