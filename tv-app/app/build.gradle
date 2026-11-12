@@ -2,5 +2,6 @@ plugins { id 'com.android.application' }
 android {
  namespace 'in.gamesplanet.tvpreview'
  compileSdk 35
- defaultConfig { applicationId 'in.gamesplanet.tvpreview.wifi'; minSdk 23; targetSdk 35; versionCode 1; versionName '2.0' }
+ defaultConfig { applicationId 'in.gamesplanet.tvpreview.wifi'; minSdk 23; targetSdk 35; versionCode 2026111201; versionName '2026.11.12 18:12' }
 }
+

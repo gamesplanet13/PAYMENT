@@ -28,6 +28,7 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
   private static final String PREVIEW="https://gamesplanet13.github.io/PAYMENT/preview.html";
   private static final int DISCOVERY_PORT=46822;
+  private UpdateChecker updater;
   private WebView web; private Button retry; private volatile String projectionCode=""; private volatile boolean running=true; private DatagramSocket socket; private WifiManager.MulticastLock wifiLock;
   private class WifiBridge {
     @JavascriptInterface public void advertise(String code) { if(code!=null && code.matches("[0-9]{5}")) projectionCode=code; }
@@ -62,5 +63,6 @@ public class MainActivity extends Activity {
     CookieManager cookies=CookieManager.getInstance();
     cookies.removeAllCookies(value->{cookies.flush();if(web!=null&&!isFinishing())web.loadUrl(url);});
   }
+  @Override protected void onResume(){super.onResume();if(updater==null)updater=new UpdateChecker(this);updater.start();}
   @Override protected void onDestroy(){running=false;if(socket!=null)socket.close();if(web!=null){web.removeJavascriptInterface("GPWifi");web.destroy();web=null;}super.onDestroy();}
 }
