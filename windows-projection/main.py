@@ -65,7 +65,8 @@ try {
  if(!result) return {ready:false};
  const owner=!!localStorage.getItem('gp_preview_owner_v3');
  const qr=!result.hidden;
- return {ready:true,paired:owner,qr:qr,fingerprint:qr?[(document.getElementById('displayPrice')||{}).textContent,(document.getElementById('payeeName')||{}).textContent].join('|'):''};
+ const connected=typeof approved!=='undefined' && !!approved;
+ return {ready:true,paired:owner,connected:connected,qr:qr,fingerprint:qr?[(document.getElementById('displayPrice')||{}).textContent,(document.getElementById('payeeName')||{}).textContent].join('|'):''};
 }catch(e){return {ready:false};}})()'''
 CLOCK_ON = r'''(function(){
 if(!document.getElementById('gpWinStyle')){const s=document.createElement('style');s.id='gpWinStyle';s.textContent=`
@@ -78,6 +79,21 @@ body.gp-win-clock .digital-date {font-size:clamp(22px,3.8vw,55px)!important}
 `;document.head.appendChild(s)}
 if(typeof setFlyer==='function')setFlyer(false);document.body.classList.add('gp-win-clock');return true;})()'''
 CLOCK_OFF = "document.body.classList.remove('gp-win-clock'); true"
+SHOW_SETTINGS = r"""(function(){
+ document.body.classList.remove('gp-win-clock');
+ const card=document.getElementById('pairDisplay');
+ if(!card)return false;
+ card.hidden=false;
+ const unpair=document.getElementById('forgetControl');
+ if(unpair)unpair.hidden=!localStorage.getItem('gp_preview_owner_v3');
+ card.scrollIntoView({block:'center'});
+ return true;
+})()"""
+CLOSE_SETTINGS = r"""(function(){
+ const card=document.getElementById('pairDisplay');
+ if(card && typeof approved!=='undefined' && approved)card.hidden=true;
+ window.scrollTo(0,0); return true;
+})()"""
 
 class App:
     def __init__(self):
@@ -104,6 +120,25 @@ class App:
             self.state.mode = 'pairing'
         self.show_window(False)
 
+    def open_settings(self, *_):
+        with self.lock:
+            self.state.open_settings()
+        try:
+            self.window.show()
+            self.window.evaluate_js(SHOW_SETTINGS)
+        except Exception:
+            logging.exception('Could not open connection settings')
+
+    def close_settings(self, *_):
+        with self.lock:
+            self.state.close_settings()
+            self.state.dismiss()
+        try:
+            self.window.evaluate_js(CLOSE_SETTINGS)
+            self.window.hide()
+        except Exception:
+            logging.exception('Could not close connection settings')
+
     def quit(self, *_):
         self.running = False
         if self.tray:
@@ -116,7 +151,7 @@ class App:
         d=ImageDraw.Draw(img);d.rounded_rectangle((3,3,61,61),radius=14,outline='#e7b44d',width=4)
         d.text((13,22),'GP',fill='#f0c467')
         self.tray=pystray.Icon('GamesPlanetProjection',img,'Games Planet Projection',
-            menu=pystray.Menu(pystray.MenuItem('Open Projection',self.open_window,default=True),pystray.MenuItem('Exit',self.quit)))
+            menu=pystray.Menu(pystray.MenuItem('Open Projection',self.open_window,default=True),pystray.MenuItem('Connection settings / code',self.open_settings),pystray.MenuItem('Hide Projection',self.close_settings),pystray.MenuItem('Exit',self.quit)))
         self.tray.run()
 
     def input_loop(self):
@@ -132,7 +167,7 @@ class App:
             changed = marker != previous or current != position
             previous, position = marker, current
             with self.lock:
-                if changed and self.state.visible and time.monotonic() >= self.ignore_input_until:
+                if changed and self.state.can_hide_on_input() and time.monotonic() >= self.ignore_input_until:
                     self.state.dismiss()
                     try: self.window.hide()
                     except Exception: logging.exception('Could not hide projection')
@@ -158,12 +193,12 @@ class App:
                 marker,idle=get_input()
                 if self.first:
                     self.first=False
-                    if not data.get('paired'):
-                        self.window.evaluate_js("document.getElementById('pairDisplay').scrollIntoView({block:'center'}); true")
+                    if not data.get('connected'):
+                        self.window.evaluate_js(SHOW_SETTINGS)
                 was_visible=self.state.visible
                 with self.lock:
                     # Input is monitored independently, including when JavaScript is busy.
-                    action=self.state.decide(paired=bool(data.get('paired')),qr=bool(data.get('qr')),
+                    action=self.state.decide(paired=bool(data.get('paired')),connected=bool(data.get('connected')),qr=bool(data.get('qr')),
                         fingerprint=data.get('fingerprint',''),idle=idle,input_marker=self.state.input_marker)
                 if action=='new_qr':
                     self.ignore_input_until=time.monotonic()+1;wake_monitor();self.show_window(False)

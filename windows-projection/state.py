@@ -7,6 +7,20 @@ class ProjectionState:
         self.fingerprint = None
         self.dismissed = None
         self.input_marker = None
+        self.connected = False
+        self.ready = False
+        self.settings_open = False
+
+    def can_hide_on_input(self):
+        return self.visible and self.ready and self.connected and not self.settings_open
+
+    def open_settings(self):
+        self.settings_open = True
+        self.visible = True
+        self.mode = 'pairing'
+
+    def close_settings(self):
+        self.settings_open = False
 
     def dismiss(self):
         if self.mode == 'qr':
@@ -14,13 +28,17 @@ class ProjectionState:
         self.visible = False
         self.mode = 'hidden'
 
-    def decide(self, *, paired, qr, fingerprint, idle, input_marker):
+    def decide(self, *, paired, connected, qr, fingerprint, idle, input_marker):
         moved = self.input_marker is not None and input_marker != self.input_marker
         self.input_marker = input_marker
-        if not paired:
-            if moved and self.visible:
-                self.dismiss()
-                return 'hide'
+        was_connected = self.connected
+        self.ready = True
+        self.connected = connected
+        if connected and not was_connected and self.settings_open:
+            self.close_settings()
+        if self.settings_open:
+            return 'stay'
+        if not connected:
             return 'pairing' if self.visible else 'stay'
         if not qr:
             self.fingerprint = None
@@ -31,7 +49,7 @@ class ProjectionState:
             self.visible = True
             self.mode = 'qr'
             return 'new_qr'
-        if moved and self.visible and self.mode in ('qr', 'clock'):
+        if moved and self.can_hide_on_input() and self.mode in ('qr', 'clock'):
             self.dismiss()
             return 'hide'
         if qr and self.dismissed != fingerprint:
