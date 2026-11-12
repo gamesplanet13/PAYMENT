@@ -29,6 +29,10 @@ public class MainActivity extends Activity {
   private Button retry;
   private volatile boolean scanning;
   private class WifiBridge {
+    @JavascriptInterface public long getAppVersion() {
+      try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; }
+      catch (Exception e) { return 0; }
+    }
     @JavascriptInterface public void search() {
       synchronized (MainActivity.this) { if (scanning) return; scanning = true; }
       new Thread(() -> {

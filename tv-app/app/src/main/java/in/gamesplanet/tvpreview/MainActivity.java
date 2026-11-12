@@ -31,6 +31,10 @@ public class MainActivity extends Activity {
   private UpdateChecker updater;
   private WebView web; private Button retry; private volatile String projectionCode=""; private volatile boolean running=true; private DatagramSocket socket; private WifiManager.MulticastLock wifiLock;
   private class WifiBridge {
+    @JavascriptInterface public long getAppVersion() {
+      try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; }
+      catch (Exception e) { return 0; }
+    }
     @JavascriptInterface public void advertise(String code) { if(code!=null && code.matches("[0-9]{5}")) projectionCode=code; }
   }
   private void startDiscovery(){new Thread(()->{

@@ -1666,6 +1666,7 @@ setInterval(()=>{if(!isDisplay){resetStale(false);for(const code of Object.keys(
 // non-blocking link to the current build, without claiming an update is needed.
 (function(){
  if(!window.GPWifi && !(/Android/i.test(navigator.userAgent)&&/\bwv\b/i.test(navigator.userAgent)))return;
+ if(window.GPWifi && typeof window.GPWifi.getAppVersion==='function')return;
  if(sessionStorage.getItem('gp_legacy_update_dismissed'))return;
  var projection=/preview\.html$/i.test(location.pathname)||location.hash==='#display';
  var which=projection?'projection':'control';
