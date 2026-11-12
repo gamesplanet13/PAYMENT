@@ -22,6 +22,12 @@ import android.graphics.Color;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import org.json.JSONArray;
 import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
@@ -35,7 +41,39 @@ public class MainActivity extends Activity {
       try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; }
       catch (Exception e) { return 0; }
     }
+    @JavascriptInterface public void requestWeather(String slug, String cityName) {
+      if(slug==null || !slug.matches("[a-z0-9-]{1,100}") || cityName==null || cityName.length()>100)return;
+      new Thread(()->{
+        try {
+          double lat, lon;
+          if("rampur-in".equals(slug) && cityName.toLowerCase(java.util.Locale.ROOT).contains("uttar pradesh")) {lat=28.8154;lon=79.0255;}
+          else {
+            String[] parts=cityName.split(",");String name=parts[0].trim();
+            String state=parts.length>1?parts[1].trim():"";
+            if(name.isEmpty() || state.isEmpty() || "india".equalsIgnoreCase(state))return;
+            JSONObject geo=readJSON("https://geocoding-api.open-meteo.com/v1/search?name="+URLEncoder.encode(name,"UTF-8")+"&count=100&language=en&format=json&countryCode=IN");
+            JSONArray rows=geo.optJSONArray("results");JSONObject match=null;
+            if(rows!=null)for(int i=0;i<rows.length();i++) {JSONObject row=rows.optJSONObject(i);if(row!=null && name.equalsIgnoreCase(row.optString("name")) && state.equalsIgnoreCase(row.optString("admin1")) && "IN".equalsIgnoreCase(row.optString("country_code"))){match=row;break;}}
+            if(match==null)return;lat=match.getDouble("latitude");lon=match.getDouble("longitude");
+          }
+          JSONObject response=readJSON("https://api.open-meteo.com/v1/forecast?latitude="+lat+"&longitude="+lon+"&current=temperature_2m,relative_humidity_2m&timezone=Asia%2FKolkata");
+          JSONObject current=response.getJSONObject("current");double temp=current.getDouble("temperature_2m"),humidity=current.getDouble("relative_humidity_2m");
+          if(Double.isNaN(temp)||Double.isInfinite(temp)||temp< -70||temp>65||Double.isNaN(humidity)||humidity<0||humidity>100)return;
+          JSONObject payload=new JSONObject();payload.put("city",slug);payload.put("temp",temp);payload.put("humidity",humidity);
+          runOnUiThread(()->{if(web!=null&&!isFinishing())web.evaluateJavascript("if(window.gpNativeWeather)window.gpNativeWeather("+payload.toString()+")",null);});
+        } catch(Exception e){android.util.Log.w("GPWeather","Native weather fetch failed",e);}
+      },"gp-native-weather").start();
+    }
     @JavascriptInterface public void advertise(String code) { if(code!=null && code.matches("[0-9]{5}")) projectionCode=code; }
+  }
+  private JSONObject readJSON(String address) throws Exception {
+    HttpURLConnection conn=(HttpURLConnection)new URL(address).openConnection();
+    conn.setConnectTimeout(12000);conn.setReadTimeout(12000);conn.setUseCaches(false);
+    try {if(conn.getResponseCode()!=200)throw new java.io.IOException("Weather HTTP error");
+      try(InputStream in=conn.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){
+        byte[] buf=new byte[2048];int n;while((n=in.read(buf))!=-1){if(out.size()+n>262144)throw new java.io.IOException("Weather response too large");out.write(buf,0,n);}return new JSONObject(out.toString("UTF-8"));
+      }
+    } finally {conn.disconnect();}
   }
   private void startDiscovery(){new Thread(()->{
     try {
