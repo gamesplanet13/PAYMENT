@@ -14,6 +14,11 @@ class Tests(unittest.TestCase):
   self.assertEqual(step(qr=True,fingerprint='102',input_marker=3),'hide')
   self.assertEqual(step(input_marker=3),'stay')
   self.assertEqual(step(qr=True,fingerprint='102',input_marker=3),'new_qr')
+ def test_unpaired_can_be_dismissed(self):
+  s=ProjectionState()
+  self.assertEqual(s.decide(paired=False,qr=False,fingerprint='',idle=0,input_marker=1),'pairing')
+  self.assertEqual(s.decide(paired=False,qr=False,fingerprint='',idle=0,input_marker=2),'hide')
+  self.assertEqual(s.decide(paired=False,qr=False,fingerprint='',idle=0,input_marker=2),'stay')
  def test_new_amount_overrides_dismissal(self):
   s=ProjectionState();s.decide(paired=True,qr=True,fingerprint='a',idle=0,input_marker=1)
   s.decide(paired=True,qr=True,fingerprint='a',idle=0,input_marker=2)

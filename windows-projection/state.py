@@ -8,13 +8,20 @@ class ProjectionState:
         self.dismissed = None
         self.input_marker = None
 
+    def dismiss(self):
+        if self.mode == 'qr':
+            self.dismissed = self.fingerprint
+        self.visible = False
+        self.mode = 'hidden'
+
     def decide(self, *, paired, qr, fingerprint, idle, input_marker):
         moved = self.input_marker is not None and input_marker != self.input_marker
         self.input_marker = input_marker
         if not paired:
-            self.mode = 'pairing'
-            self.visible = True
-            return 'pairing'
+            if moved and self.visible:
+                self.dismiss()
+                return 'hide'
+            return 'pairing' if self.visible else 'stay'
         if not qr:
             self.fingerprint = None
             self.dismissed = None
@@ -25,10 +32,7 @@ class ProjectionState:
             self.mode = 'qr'
             return 'new_qr'
         if moved and self.visible and self.mode in ('qr', 'clock'):
-            if self.mode == 'qr':
-                self.dismissed = self.fingerprint
-            self.mode = 'hidden'
-            self.visible = False
+            self.dismiss()
             return 'hide'
         if qr and self.dismissed != fingerprint:
             if not self.visible:

@@ -23,6 +23,13 @@ kernel32 = ctypes.windll.kernel32
 kernel32.CreateMutexW.restype = wintypes.HANDLE
 kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.CreateEventW.restype = wintypes.HANDLE
+kernel32.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.OpenEventW.restype = wintypes.HANDLE
+kernel32.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.SetEvent.argtypes = [wintypes.HANDLE]
+kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+OPEN_EVENT = 'Local\\GamesPlanetProjectionOpen'
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [('cbSize', wintypes.UINT), ('dwTime', wintypes.DWORD)]
 
@@ -78,7 +85,9 @@ class App:
         self.state = ProjectionState(IDLE_SECONDS)
         self.running = True
         self.tray = None
-        self.manual_until = 0
+        self.ignore_input_until = time.monotonic() + 1
+        self.lock = threading.RLock()
+        self.open_event = None
         self.first = True
 
     def show_window(self, clock=False):
@@ -89,10 +98,11 @@ class App:
             logging.exception('Could not show projection')
 
     def open_window(self, *_):
-        self.manual_until = time.monotonic() + 30
-        self.state.visible = True
-        self.state.mode = 'pairing'
-        self.show_window(False)
+        with self.lock:
+            self.ignore_input_until = time.monotonic() + 1
+            self.state.visible = True
+            self.state.mode = 'pairing'
+            self.show_window(False)
 
     def quit(self, *_):
         self.running = False
@@ -109,10 +119,31 @@ class App:
             menu=pystray.Menu(pystray.MenuItem('Open Projection',self.open_window,default=True),pystray.MenuItem('Exit',self.quit)))
         self.tray.run()
 
+    def input_loop(self):
+        previous = get_input()[0]
+        point = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(point))
+        position = (point.x, point.y)
+        while self.running:
+            time.sleep(.12)
+            marker, _ = get_input()
+            user32.GetCursorPos(ctypes.byref(point))
+            current = (point.x, point.y)
+            changed = marker != previous or current != position
+            previous, position = marker, current
+            with self.lock:
+                if changed and self.state.visible and time.monotonic() >= self.ignore_input_until:
+                    self.state.dismiss()
+                    try: self.window.hide()
+                    except Exception: logging.exception('Could not hide projection')
+            if self.open_event and kernel32.WaitForSingleObject(self.open_event, 0) == 0:
+                self.open_window()
+
     def loop(self):
         # Keep the PC awake to receive payments, but allow the display to turn off.
         kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
         threading.Thread(target=self.tray_loop,daemon=True).start()
+        threading.Thread(target=self.input_loop,daemon=True).start()
         failures=0
         while self.running:
             try:
@@ -130,15 +161,16 @@ class App:
                     if not data.get('paired'):
                         self.window.evaluate_js("document.getElementById('pairDisplay').scrollIntoView({block:'center'}); true")
                 was_visible=self.state.visible
-                action=self.state.decide(paired=bool(data.get('paired')),qr=bool(data.get('qr')),
-                    fingerprint=data.get('fingerprint',''),idle=idle,input_marker=marker)
+                with self.lock:
+                    # Input is monitored independently, including when JavaScript is busy.
+                    action=self.state.decide(paired=bool(data.get('paired')),qr=bool(data.get('qr')),
+                        fingerprint=data.get('fingerprint',''),idle=idle,input_marker=self.state.input_marker)
                 if action=='new_qr':
-                    self.manual_until=0;wake_monitor();self.show_window(False)
+                    self.ignore_input_until=time.monotonic()+1;wake_monitor();self.show_window(False)
                 elif action=='clock':
-                    if time.monotonic()>=self.manual_until:self.show_window(True)
+                    self.ignore_input_until=time.monotonic()+1;self.show_window(True)
                 elif action=='hide':
-                    if time.monotonic()>=self.manual_until:self.window.hide()
-                    else:self.state.visible=True;self.state.mode='pairing'
+                    self.window.hide()
                 elif action=='pairing' and not was_visible:
                     self.show_window(False)
                 elif action=='stay' and self.state.visible and self.state.mode=='clock':
@@ -152,10 +184,16 @@ def main():
     APP_DIR.mkdir(parents=True,exist_ok=True);PROFILE.mkdir(parents=True,exist_ok=True)
     logging.basicConfig(filename=str(APP_DIR / 'projection.log'),level=logging.WARNING)
     mutex=kernel32.CreateMutexW(None, False, 'Local\\GamesPlanetProjectionSingleInstance')
-    if not mutex or kernel32.GetLastError()==183:
+    if not mutex: return
+    if kernel32.GetLastError()==183:
+        event=kernel32.OpenEventW(2, False, OPEN_EVENT)
+        if event:
+            kernel32.SetEvent(event);kernel32.CloseHandle(event)
+        kernel32.CloseHandle(mutex)
         return
     install_autostart()
     app=App()
+    app.open_event=kernel32.CreateEventW(None, False, False, OPEN_EVENT)
     app.window=webview.create_window('Games Planet Projection', URL, fullscreen=True, on_top=True, background_color='#000000')
     def on_closed():
         app.running=False
@@ -166,6 +204,7 @@ def main():
     finally:
         app.running=False
         if app.tray:app.tray.stop()
+        if app.open_event: kernel32.CloseHandle(app.open_event)
         kernel32.CloseHandle(mutex)
 if __name__=='__main__':
     if '--self-test' in sys.argv:
