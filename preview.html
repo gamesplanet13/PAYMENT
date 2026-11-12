@@ -231,6 +231,13 @@
 .shop-flyer.flyer-theme-2 .flyer-content{transform:translateX(1%)}
 .flyer-comet{position:absolute;z-index:4;top:0;left:0;width:12px;height:12px;border-radius:50%;background:white;box-shadow:0 0 8px 4px #fff,0 0 20px 10px #00e8ff,0 0 34px 14px #ff00db;pointer-events:none;animation:flyerOrbit 8s linear infinite}
 @keyframes flyerOrbit{0%{top:0;left:0}25%{top:0;left:calc(100% - 12px)}50%{top:calc(100% - 12px);left:calc(100% - 12px)}75%{top:calc(100% - 12px);left:0}100%{top:0;left:0}}
+@media (orientation:landscape){
+ .shop-flyer.flyer-theme-1 .flyer-content{width:82%;margin-right:auto;padding-left:4%;align-items:flex-start;text-align:left;transform:none}
+ .shop-flyer.flyer-theme-1 .flyer-label,.shop-flyer.flyer-theme-1 .flyer-numbers,.shop-flyer.flyer-theme-1 .flyer-channels{justify-content:flex-start}
+ .shop-flyer.flyer-theme-2 .flyer-content{width:82%;margin-left:auto;padding-right:4%;align-items:flex-end;text-align:right;transform:none}
+ .shop-flyer.flyer-theme-2 .flyer-label,.shop-flyer.flyer-theme-2 .flyer-numbers,.shop-flyer.flyer-theme-2 .flyer-channels{justify-content:flex-end}
+ .shop-flyer.flyer-theme-1 h2,.shop-flyer.flyer-theme-2 h2{font-size:7.3vw}
+}
 /* Animated stylised racing scene positioned over the showroom monitor. */
 .flyer-game{position:absolute;z-index:1;left:82.4%;left:calc(50% + max(32vw,56.9vh));top:37.7%;top:calc(50% - max(12.5vh,7vw));width:8.4%;width:max(9vw,16vh);height:12%;height:max(12vh,6.75vw);overflow:hidden;background:linear-gradient(170deg,#0e3870,#070e24 60%,#751c9e);transform:skewY(3deg);box-shadow:0 0 10px #03eaff;pointer-events:none}
 .flyer-game::before{content:'';position:absolute;left:23%;right:23%;top:40%;bottom:-35%;background:repeating-linear-gradient(0deg,#1cbfff 0 2px,transparent 2px 13px),linear-gradient(90deg,transparent 47%,#fff 48%,#fff 52%,transparent 53%);transform:perspective(100px) rotateX(50deg);animation:roadMove .5s linear infinite}
