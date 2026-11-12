@@ -102,7 +102,7 @@ class App:
             self.ignore_input_until = time.monotonic() + 1
             self.state.visible = True
             self.state.mode = 'pairing'
-            self.show_window(False)
+        self.show_window(False)
 
     def quit(self, *_):
         self.running = False

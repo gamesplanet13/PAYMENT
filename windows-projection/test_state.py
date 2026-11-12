@@ -6,7 +6,7 @@ class Tests(unittest.TestCase):
   def step(**kwargs):
    vals=dict(paired=True,qr=False,fingerprint='',idle=0,input_marker=1);vals.update(kwargs);return s.decide(**vals)
   self.assertEqual(step(paired=False),'pairing')
-  self.assertEqual(step(),'hide')
+  self.assertEqual(step(),'stay')
   self.assertEqual(step(qr=True,fingerprint='102'),'new_qr')
   self.assertEqual(step(qr=True,fingerprint='102',input_marker=2),'hide')
   self.assertEqual(step(qr=True,fingerprint='102',input_marker=2),'stay')

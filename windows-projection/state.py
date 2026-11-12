@@ -51,7 +51,5 @@ class ProjectionState:
             self.visible = False
             return 'hide'
         if self.mode == 'pairing':
-            self.mode = 'hidden'
-            self.visible = False
-            return 'hide'
+            return 'stay'
         return 'stay'
