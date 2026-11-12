@@ -1,0 +1,53 @@
+"""Pure projection visibility rules, separated so they can be tested."""
+class ProjectionState:
+    def __init__(self, idle_seconds=60):
+        self.idle_seconds = idle_seconds
+        self.visible = True
+        self.mode = 'pairing'
+        self.fingerprint = None
+        self.dismissed = None
+        self.input_marker = None
+
+    def decide(self, *, paired, qr, fingerprint, idle, input_marker):
+        moved = self.input_marker is not None and input_marker != self.input_marker
+        self.input_marker = input_marker
+        if not paired:
+            self.mode = 'pairing'
+            self.visible = True
+            return 'pairing'
+        if not qr:
+            self.fingerprint = None
+            self.dismissed = None
+        elif fingerprint and fingerprint != self.fingerprint:
+            self.fingerprint = fingerprint
+            self.dismissed = None
+            self.visible = True
+            self.mode = 'qr'
+            return 'new_qr'
+        if moved and self.visible and self.mode in ('qr', 'clock'):
+            if self.mode == 'qr':
+                self.dismissed = self.fingerprint
+            self.mode = 'hidden'
+            self.visible = False
+            return 'hide'
+        if qr and self.dismissed != fingerprint:
+            if not self.visible:
+                self.visible = True
+                self.mode = 'qr'
+                return 'qr'
+            return 'stay'
+        if idle >= self.idle_seconds:
+            if self.mode != 'clock' or not self.visible:
+                self.mode = 'clock'
+                self.visible = True
+                return 'clock'
+            return 'stay'
+        if self.visible and self.mode != 'pairing':
+            self.mode = 'hidden'
+            self.visible = False
+            return 'hide'
+        if self.mode == 'pairing':
+            self.mode = 'hidden'
+            self.visible = False
+            return 'hide'
+        return 'stay'
