@@ -1557,4 +1557,31 @@ function updateClock(){let now=new Date(),h=now.getHours(),minute=now.getMinutes
 updateClock();setInterval(updateClock,1000);setInterval(rotateIdleSlides,1000);setInterval(()=>refreshWeather(false),60000);setClockStyle(selectedClock);showCalculation(null);$('display').classList.toggle('clock-idle',!persistentPreview);document.body.classList.toggle('idle-clock',!persistentPreview);
 if(state.permanent){$('permanent').checked=true;show('local',state.amount,state.account)}
 setInterval(()=>{if(!isDisplay){resetStale(false);for(const code of Object.keys(saved))if(!displays.has(code))connect(code,true);sendAll()}else if(approved&&lastUpdate&&Date.now()-lastUpdate>20000){if(!persistentPreview){show('display',null);$('waiting').textContent='Waiting for connection'}else restorePreview();status('No update — reconnecting…');if(incoming)incoming.close()}},5000);setMode(isDisplay);
+</script><script>
+// Older Android WebViews cannot report their installed APK version. Offer a
+// non-blocking link to the current build, without claiming an update is needed.
+(function(){
+ if(!window.GPWifi && !(/Android/i.test(navigator.userAgent)&&/\bwv\b/i.test(navigator.userAgent)))return;
+ if(sessionStorage.getItem('gp_legacy_update_dismissed'))return;
+ var projection=/preview\.html$/i.test(location.pathname)||location.hash==='#display';
+ var which=projection?'projection':'control';
+ var base='https://gamesplanet13.github.io/PAYMENT/updates/';
+ fetch(base+which+'.json?check='+Date.now(),{cache:'no-store'}).then(function(r){if(!r.ok)throw Error('offline');return r.json()}).then(function(info){
+  if(typeof info.url!=='string'||!info.url.startsWith(base)||!info.url.endsWith('.apk'))return;
+  var panel=document.createElement('aside');panel.id='gpLegacyUpdate';panel.setAttribute('aria-label','App APK download');
+  panel.style.cssText='position:fixed;z-index:100000;right:10px;bottom:12px;max-width:min(92vw,360px);padding:10px;border:1px solid #d6aa4d;border-radius:12px;background:#111;color:#fff;font:14px system-ui;box-shadow:0 3px 14px #000a';
+  var title=document.createElement('strong');title.textContent='ऐप अपडेट / APK';title.style.cssText='display:block;margin-bottom:6px';
+  var details=document.createElement('div');details.style.cssText='display:none;margin:7px 0';
+  var text=document.createElement('p');text.textContent='नया ऐप डाउनलोड करें। अगर बटन काम न करे, इस लिंक को Chrome में खोलें।';text.style.cssText='margin:4px 0';
+  var link=document.createElement('a');link.href=info.url;link.textContent='डाउनलोड APK';link.style.cssText='display:inline-block;color:#051b14;background:#70ddb2;padding:7px;border-radius:6px;margin:4px 0;text-decoration:none';
+  var address=document.createElement('input');address.readOnly=true;address.value=info.url;address.setAttribute('aria-label','APK download link');address.style.cssText='display:block;box-sizing:border-box;width:100%;font-size:11px;background:#222;color:#fff;border:1px solid #777;padding:5px';address.onclick=function(){address.select()};
+  details.append(text,link,address);
+  var toggle=document.createElement('button');toggle.type='button';toggle.textContent='अपडेट देखें';toggle.style.cssText='background:#70ddb2;color:#061b16;border:0;border-radius:6px;padding:7px;margin-right:8px';toggle.onclick=function(){details.style.display=details.style.display==='none'?'block':'none'};
+  var close=document.createElement('button');close.type='button';close.textContent='बाद में';close.style.cssText='background:#333;color:#fff;border:0;border-radius:6px;padding:7px';close.onclick=function(){sessionStorage.setItem('gp_legacy_update_dismissed','1');panel.remove()};
+  panel.append(title,toggle,close,details);document.body.appendChild(panel);
+  function hideForPayment(){var result=document.getElementById('displayResult');panel.style.display=projection&&result&&!result.hidden?'none':'block'}
+  hideForPayment();setInterval(hideForPayment,1500);
+ }).catch(function(){});
+})();
+
 </script></body></html>
