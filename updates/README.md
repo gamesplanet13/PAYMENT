@@ -1,0 +1,3 @@
+# Android updates
+
+The updater checks control.json or projection.json asynchronously, downloads only HTTPS APKs under this directory, verifies SHA-256, and asks Android to install. Keep versionCode increasing, use an India date/time versionName, publish a versioned APK and update its JSON after signing and verifying. Both apps must be signed with the same persistent private release key as the installed updater-enabled version. Never publish debug APKs as updates, commit the signing key, or expose its password. The owner's private signing backup is needed for future releases. Android generally requires the user to approve sideloaded installs. Web page updates do not require a new APK.
