@@ -164,4 +164,9 @@ def main():
         app.running=False
         if app.tray:app.tray.stop()
         kernel32.CloseHandle(mutex)
-if __name__=='__main__':main()
+if __name__=='__main__':
+    if '--self-test' in sys.argv:
+        marker, idle = get_input()
+        assert isinstance(marker, int) and idle >= 0
+    else:
+        main()

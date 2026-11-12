@@ -26,6 +26,12 @@ jobs:
         run: python -m unittest discover -s windows-projection -v
       - name: Build standalone Windows EXE
         run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name GamesPlanetProjection --collect-all webview --collect-all pythonnet --collect-all clr_loader windows-projection/main.py
+      - name: Smoke-test packaged executable
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist/GamesPlanetProjection.exe" -ArgumentList "--self-test" -PassThru
+          if (-not $p.WaitForExit(45000)) { $p.Kill(); throw "Executable self-test timed out" }
+          if ($p.ExitCode -ne 0) { throw "Executable self-test failed: $($p.ExitCode)" }
       - name: Package
         shell: pwsh
         run: |
