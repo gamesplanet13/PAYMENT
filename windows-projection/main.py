@@ -129,6 +129,7 @@ class App:
                     self.first=False
                     if not data.get('paired'):
                         self.window.evaluate_js("document.getElementById('pairDisplay').scrollIntoView({block:'center'}); true")
+                was_visible=self.state.visible
                 action=self.state.decide(paired=bool(data.get('paired')),qr=bool(data.get('qr')),
                     fingerprint=data.get('fingerprint',''),idle=idle,input_marker=marker)
                 if action=='new_qr':
@@ -138,8 +139,10 @@ class App:
                 elif action=='hide':
                     if time.monotonic()>=self.manual_until:self.window.hide()
                     else:self.state.visible=True;self.state.mode='pairing'
-                elif action=='pairing' and not self.state.visible:
+                elif action=='pairing' and not was_visible:
                     self.show_window(False)
+                elif action=='stay' and self.state.visible and self.state.mode=='clock':
+                    self.window.evaluate_js(CLOCK_ON)
             except Exception:
                 logging.exception('Projection monitor error')
         kernel32.SetThreadExecutionState(0x80000000)
