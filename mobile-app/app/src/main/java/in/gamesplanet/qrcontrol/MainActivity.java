@@ -9,6 +9,9 @@ import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
+import android.webkit.WebStorage;
+import android.webkit.CookieManager;
+import android.webkit.WebSettings;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -55,7 +58,7 @@ public class MainActivity extends Activity {
   }
   @Override public void onCreate(Bundle state) {
     super.onCreate(state); FrameLayout frame=new FrameLayout(this); web=new WebView(this);
-    web.setBackgroundColor(Color.BLACK); web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);
+    web.setBackgroundColor(Color.BLACK); web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
     web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
     web.addJavascriptInterface(new WifiBridge(),"GPWifi"); web.setWebChromeClient(new WebChromeClient()); retry=new Button(this);
     retry.setText("Unable to open control page. Check internet and tap to retry."); retry.setVisibility(View.GONE);
@@ -64,8 +67,14 @@ public class MainActivity extends Activity {
       @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return !"gamesplanet13.github.io".equalsIgnoreCase(request.getUrl().getHost());}
       @Override public void onReceivedError(WebView view,WebResourceRequest req,WebResourceError error){if(req.isForMainFrame()){web.setVisibility(View.GONE);retry.setVisibility(View.VISIBLE);}}
     });
-    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);web.loadUrl(CONTROL);
+    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);resetAndOpen(CONTROL);
   }
   @Override public void onBackPressed(){if(web!=null&&web.canGoBack())web.goBack();else super.onBackPressed();}
+  private void resetAndOpen(String url){
+    web.clearCache(true); web.clearHistory(); web.clearFormData();
+    WebStorage.getInstance().deleteAllData();
+    CookieManager cookies=CookieManager.getInstance();
+    cookies.removeAllCookies(value->{cookies.flush();if(web!=null&&!isFinishing())web.loadUrl(url);});
+  }
   @Override protected void onDestroy(){if(web!=null){web.removeJavascriptInterface("GPWifi");web.destroy();web=null;}super.onDestroy();}
 }

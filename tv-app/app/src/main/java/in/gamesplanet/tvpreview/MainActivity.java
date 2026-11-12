@@ -12,6 +12,9 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
+import android.webkit.WebStorage;
+import android.webkit.CookieManager;
+import android.webkit.WebSettings;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -42,7 +45,7 @@ public class MainActivity extends Activity {
     }catch(Exception ignored){}finally{if(socket!=null)socket.close();if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();}
   }).start();}
   @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-    FrameLayout frame=new FrameLayout(this);web=new WebView(this);web.setBackgroundColor(Color.BLACK);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);
+    FrameLayout frame=new FrameLayout(this);web=new WebView(this);web.setBackgroundColor(Color.BLACK);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
     web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(false);web.addJavascriptInterface(new WifiBridge(),"GPWifi");web.setFocusable(true);web.setFocusableInTouchMode(true);
     retry=new Button(this);retry.setText("Unable to open projection. Check internet and press OK to retry.");retry.setVisibility(View.GONE);
     retry.setOnClickListener(v->{retry.setVisibility(View.GONE);web.setVisibility(View.VISIBLE);web.loadUrl(PREVIEW);web.requestFocus();});
@@ -50,8 +53,14 @@ public class MainActivity extends Activity {
       @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return !"gamesplanet13.github.io".equalsIgnoreCase(request.getUrl().getHost());}
       @Override public void onReceivedError(WebView view,WebResourceRequest req,WebResourceError error){if(req.isForMainFrame()){web.setVisibility(View.GONE);retry.setVisibility(View.VISIBLE);retry.requestFocus();}}
     });
-    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);startDiscovery();web.loadUrl(PREVIEW);web.requestFocus();
+    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);startDiscovery();resetAndOpen(PREVIEW);web.requestFocus();
   }
   @Override public boolean onKeyDown(int code,KeyEvent event){if(code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE){web.reload();return true;}return super.onKeyDown(code,event);}
+  private void resetAndOpen(String url){
+    web.clearCache(true); web.clearHistory(); web.clearFormData();
+    WebStorage.getInstance().deleteAllData();
+    CookieManager cookies=CookieManager.getInstance();
+    cookies.removeAllCookies(value->{cookies.flush();if(web!=null&&!isFinishing())web.loadUrl(url);});
+  }
   @Override protected void onDestroy(){running=false;if(socket!=null)socket.close();if(web!=null){web.removeJavascriptInterface("GPWifi");web.destroy();web=null;}super.onDestroy();}
 }
