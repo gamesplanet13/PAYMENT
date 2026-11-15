@@ -13,6 +13,7 @@ import webview
 import pystray
 from PIL import Image, ImageDraw
 from state import ProjectionState
+from updater import install_after_exit, stage_update
 
 URL = 'https://gamesplanet13.github.io/PAYMENT/preview.html'
 APP_DIR = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'GamesPlanetProjection'
@@ -106,6 +107,8 @@ class App:
         self.lock = threading.RLock()
         self.open_event = None
         self.first = True
+        self.exiting = False
+        self.exit_dialog = threading.Lock()
 
     def show_window(self, clock=False):
         try:
@@ -140,7 +143,43 @@ class App:
         except Exception:
             logging.exception('Could not close connection settings')
 
+    def confirm_exit(self):
+        if self.exiting:
+            return True
+        if not self.exit_dialog.acquire(blocking=False):
+            return False
+        try:
+            return self.window.create_confirmation_dialog('Exit', 'Close Games Planet Projection?')
+        finally:
+            self.exit_dialog.release()
+
+    def on_closing(self):
+        if not self.confirm_exit():
+            return False
+        self.exiting = True
+        return True
+
+    def request_exit(self):
+        if self.confirm_exit():
+            self.quit()
+
+    def update_loop(self):
+        while self.running:
+            try:
+                stage = stage_update(APP_DIR)
+                if stage and self.running:
+                    self.open_window()
+                    if self.window.create_confirmation_dialog('Update ready', 'Install the Games Planet Projection update now?'):
+                        install_after_exit(stage)
+                        self.quit()
+                        return
+                    stage.unlink(missing_ok=True)
+            except Exception:
+                logging.debug('Update unavailable', exc_info=True)
+            time.sleep(300)
+
     def quit(self, *_):
+        self.exiting = True
         self.running = False
         if self.tray:
             self.tray.stop()
@@ -180,6 +219,8 @@ class App:
         kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
         threading.Thread(target=self.tray_loop,daemon=True).start()
         threading.Thread(target=self.input_loop,daemon=True).start()
+        if getattr(sys, 'frozen', False):
+            threading.Thread(target=self.update_loop,daemon=True).start()
         failures=0
         while self.running:
             try:
@@ -231,10 +272,15 @@ def main():
     app=App()
     app.open_event=kernel32.CreateEventW(None, False, False, OPEN_EVENT)
     app.window=webview.create_window('Games Planet Projection', URL, fullscreen=True, on_top=True, background_color='#000000')
+    app.window.expose(app.request_exit)
     def on_closed():
         app.running=False
         if app.tray:app.tray.stop()
+    app.window.events.closing += app.on_closing
     app.window.events.closed += on_closed
+    def on_loaded():
+        app.window.evaluate_js("window.addEventListener('keydown', e=>{if(e.key==='Escape'||e.key==='BrowserBack'||(e.altKey&&e.key==='ArrowLeft')){e.preventDefault();e.stopImmediatePropagation();window.pywebview?.api?.request_exit()}},true)")
+    app.window.events.loaded += on_loaded
     try:
         webview.start(app.loop, private_mode=False, storage_path=str(PROFILE))
     finally:

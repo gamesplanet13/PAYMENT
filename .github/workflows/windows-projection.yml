@@ -45,3 +45,33 @@ jobs:
             package/GamesPlanetProjection.exe
             GamesPlanetProjection-Windows-${{ matrix.arch }}.zip
           if-no-files-found: error
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: GamesPlanet-Windows-Projection-*
+          path: downloads
+      - name: Publish Windows update assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^VERSION = //p' windows-projection/updater.py)
+          mkdir release
+          for arch in x64 x86; do
+            exe=$(find "downloads/GamesPlanet-Windows-Projection-$arch" -name GamesPlanetProjection.exe -print -quit)
+            test -n "$exe"
+            cp "$exe" "release/GamesPlanetProjection-$arch.exe"
+            hash=$(sha256sum "$exe" | cut -d ' ' -f 1)
+            printf '{"version":%s,"sha256":"%s"}\n' "$version" "$hash" > "release/qr-windows-$arch.json"
+          done
+          tag=projection-windows-current
+          gh release view "$tag" >/dev/null 2>&1 ||
+            gh release create "$tag" --target "$GITHUB_SHA" --title "Games Planet Projection for Windows" --notes "Windows 64-bit and 32-bit Projection."
+          gh release upload "$tag" release/*.exe --clobber
+          gh release upload "$tag" release/*.json --clobber
