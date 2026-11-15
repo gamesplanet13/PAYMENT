@@ -1537,6 +1537,25 @@ function req(id){if(cache[id])return cache[id].exports; if(!modules[id])throw Er
 const $=id=>document.getElementById(id),ACCOUNTS={surendra:{id:'paytmqr5hyx5o@ptys',name:'Surendra Kaur',label:'Surendra Kaur — Paytm'},sbi:{id:'gnsl.khalsa-4@okaxis',name:'RAJINDER SINGH',label:'Rajinder Singh — SBI 4338 (Non GST)'},hdfc_gst:{id:'gnsl.khalsa@okhdfcbank',name:'GAMES PLANET ZONE',label:'Games Planet Zone — HDFC 2488 (GST)'},hdfc_savings:{id:'gnsl.khalsa-1@okhdfcbank',name:'RAJINDER SINGH',label:'Rajinder Singh — HDFC 7441 (Saving / Non GST)'},smarthub:{id:'gamesplanetzone.62748534@hdfcbank',name:'GAMES PLANET ZONE',label:'Games Planet Zone — HDFC SmartHub / PayZapp'}};
 let isDisplay=location.pathname.endsWith('/preview.html')||location.hash==='#display',peer=null,previewCode='',approved=false,state={amount:null,account:'surendra',permanent:false},persistentPreview=null,lastDisplayState=null,seenActions=new Set(),displays=new Map(),saved={},displayStates={},blockedCodes=new Set();
 const controlChannels=new Map();
+let pendingRemovals={};
+try{pendingRemovals=JSON.parse(localStorage.getItem('gp_pending_unpairs_v1')||'{}')}catch(e){}
+function saveRemovals(){localStorage.setItem('gp_pending_unpairs_v1',JSON.stringify(pendingRemovals))}
+function retrySavedConnections(){
+ for(const code of Object.keys(pendingRemovals))if(!displays.has(code))connect(code,true);
+ for(const code of Object.keys(saved))if(!displays.has(code))connect(code,true);
+}
+let bootTimer;
+function retryPeer(p,delay=2000){
+ if(bootTimer)return;
+ bootTimer=setTimeout(()=>{
+  bootTimer=null;
+  if(p!==peer||p?.open)return;
+  if(p)p.destroy();
+  peer=null;
+  boot();
+ },delay);
+}
+
 const pairedControls=new Set();
 try{
  const savedControls=JSON.parse(localStorage.getItem('gp_preview_controls_v1')||'null');
@@ -1645,13 +1664,13 @@ function draw(canvas,amount,account){let uri='upi://pay?pa='+encodeURIComponent(
 function show(mode,amount,key='surendra'){let account=ACCOUNTS[key];if(amount!==null&&!account)throw Error('Unknown account');$(mode+'Result').hidden=amount===null;if(mode==='display'){let wasIdle=document.body.classList.contains('idle-clock'),willIdle=amount===null;if(wasIdle!==willIdle){setFlyer(false,true)}$('display').classList.toggle('clock-idle',willIdle);document.body.classList.toggle('idle-clock',willIdle);if(amount===null)showCalculation(null);$('waiting').hidden=amount!==null;$('payeeName').hidden=amount===null;if(amount!==null)$('payeeName').textContent=account.name}if(amount!==null){$(mode+'Price').textContent='₹'+Number(amount).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});draw($(mode+'QR'),amount,account);if(mode==='local')$('localAccount').textContent=account.label+' • '+account.id}}
 function status(m){if(isDisplay&&persistentPreview&&!m.startsWith('● Connected'))m='Saved QR • offline • '+m;$('peerStatus').textContent=m;$('displayStatus').textContent=m;$('displayStatus').hidden=m.startsWith('● Connected')}
 function restorePreview(){if(persistentPreview){show('display',persistentPreview.amount,persistentPreview.account);showCalculation(validCalculation(persistentPreview.calculation,persistentPreview.amount));$('savedIndicator').hidden=false}else{$('savedIndicator').hidden=true}}
-function setMode(d){if(location.pathname.endsWith('/preview.html')&&!d){location.href='./';return}isDisplay=d;$('control').hidden=d;$('display').hidden=!d;document.body.classList.toggle('display',d);$('chooseDisplay').hidden=d;$('chooseControl').hidden=!d;location.hash=d?'display':'';if(peer)peer.destroy();peer=null;controlChannels.clear();approved=false;displays.clear();if(d){restorePreview()}refreshWeather(false);status('Connecting to service…');boot()}
+function setMode(d){if(location.pathname.endsWith('/preview.html')&&!d){location.href='./';return}isDisplay=d;$('control').hidden=d;$('display').hidden=!d;document.body.classList.toggle('display',d);$('chooseDisplay').hidden=d;$('chooseControl').hidden=!d;location.hash=d?'display':'';clearTimeout(bootTimer);bootTimer=null;if(peer)peer.destroy();peer=null;controlChannels.clear();approved=false;displays.clear();if(d){restorePreview()}refreshWeather(false);status('Connecting to service…');boot()}
 $('chooseDisplay').onclick=()=>setMode(true);$('chooseControl').onclick=()=>setMode(false);
 function updateAccounts(){let tax=document.querySelector('input[name=taxType]:checked').value,select=$('account');for(const option of select.options){option.hidden=option.dataset.tax!==tax;option.disabled=option.hidden}if(select.selectedOptions[0]?.disabled)select.value=tax==='gst'?'hdfc_gst':'surendra'}document.querySelectorAll('input[name=taxType]').forEach(x=>x.addEventListener('change',updateAccounts));updateAccounts();
 const sizeInput=$('qrSize');let savedSize=Number(localStorage.getItem('gp_qr_size'));if(savedSize>=120&&savedSize<=1200)sizeInput.value=String(savedSize);function updateSize(){document.documentElement.style.setProperty('--qr-size',sizeInput.value+'px');$('qrSizeValue').textContent=sizeInput.value+' px';localStorage.setItem('gp_qr_size',sizeInput.value)}sizeInput.oninput=updateSize;updateSize();
 function save(){localStorage.setItem('gp_saved_preview_codes_v3',JSON.stringify(saved))}
-function updateTargets(){let select=$('targetDisplay'),chosen=select.value||'all',codes=new Set([...Object.keys(saved),...displays.keys()]);select.replaceChildren();let all=document.createElement('option');all.value='all';all.textContent='All Projections';select.append(all);for(const code of codes){let opt=document.createElement('option');opt.value=code;opt.textContent=(displays.get(code)?.name||saved[code]||'Projection')+' ('+code+')';select.append(opt)}select.value=(chosen==='all'||codes.has(chosen))?chosen:'all'}
-function render(){if(typeof wifiFound!=='undefined')showWifiResults();updateTargets();let box=$('deviceList');box.replaceChildren();let codes=new Set([...Object.keys(saved),...displays.keys()]);for(const code of codes){let d=displays.get(code),wrap=document.createElement('div'),name=document.createElement('p'),refresh=document.createElement('button'),remove=document.createElement('button');name.textContent=(d?.name||saved[code]||'Projection')+' ('+code+') — '+(d?.allowed?'Connected':d?.ready?'Found':'Reconnecting');wrap.append(name);if(d?.ready&&!d.allowed){let join=document.createElement('button');join.className='primary';join.textContent='Connect Projection';join.onclick=()=>{d.channel.send({type:'connect',token:controlToken});status('Connecting '+d.name+'…')};wrap.append(join)}refresh.className='secondary';refresh.textContent='Refresh Projection';refresh.onclick=()=>{blockedCodes.delete(code);let current=displays.get(code);if(current?.allowed&&current.channel.open){current.channel.send({type:'refresh'});status('Refreshing '+current.name+'…')}else{if(current){displays.delete(code);current.channel.close()}status('Reconnecting Projection…');connect(code,!!saved[code]);render()}};remove.className='danger';remove.textContent='Remove Projection';remove.onclick=()=>{let current=displays.get(code);delete saved[code];save();delete displayStates[code];try{persistStates(displayStates)}catch(e){}if(current?.channel?.open)current.channel.send({type:'unpair',token:controlToken});displays.delete(code);if(current?.channel)current.channel.close();render()};wrap.append(refresh,remove);box.append(wrap)}}
+function updateTargets(){let select=$('targetDisplay'),chosen=select.value||'all',codes=new Set([...Object.keys(saved),...[...displays.keys()].filter(code=>!pendingRemovals[code])]);select.replaceChildren();let all=document.createElement('option');all.value='all';all.textContent='All Projections';select.append(all);for(const code of codes){let opt=document.createElement('option');opt.value=code;opt.textContent=(displays.get(code)?.name||saved[code]||'Projection')+' ('+code+')';select.append(opt)}select.value=(chosen==='all'||codes.has(chosen))?chosen:'all'}
+function render(){if(typeof wifiFound!=='undefined')showWifiResults();updateTargets();let box=$('deviceList');box.replaceChildren();let codes=new Set([...Object.keys(saved),...[...displays.keys()].filter(code=>!pendingRemovals[code])]);for(const code of codes){let d=displays.get(code),wrap=document.createElement('div'),name=document.createElement('p'),refresh=document.createElement('button'),remove=document.createElement('button');name.textContent=(d?.name||saved[code]||'Projection')+' ('+code+') — '+(d?.allowed?'Connected':d?.ready?'Found':'Reconnecting');wrap.append(name);if(d?.ready&&!d.allowed){let join=document.createElement('button');join.className='primary';join.textContent='Connect Projection';join.onclick=()=>{d.channel.send({type:'connect',token:controlToken});status('Connecting '+d.name+'…')};wrap.append(join)}refresh.className='secondary';refresh.textContent='Refresh Projection';refresh.onclick=()=>{blockedCodes.delete(code);let current=displays.get(code);if(current?.allowed&&current.channel.open){current.channel.send({type:'refresh'});status('Refreshing '+current.name+'…')}else{if(current){displays.delete(code);current.channel.close()}status('Reconnecting Projection…');connect(code,!!saved[code]);render()}};remove.className='danger';remove.textContent='Remove Projection';remove.onclick=()=>removeProjection(code);wrap.append(refresh,remove);box.append(wrap)}}
 function sendOne(d){
  if(!d.allowed||!d.channel.open)return;
  const pending=displayStates[d.code];
@@ -1667,8 +1686,112 @@ function sendAll(){for(const d of displays.values())sendOne(d)}
 function sendDisplaySettings(settings){
  for(const d of displays.values())if(d.allowed&&d.channel.open&&d.protocol>=3)d.channel.send({type:'display-settings',...settings});
 }
-function boot(){if(!window.Peer){status('Connection service unavailable. Check internet and reload.');return}if(isDisplay){previewCode=localStorage.getItem('gp_preview_code_v3');if(!/^\d{5}$/.test(previewCode||''))previewCode=code5();localStorage.setItem('gp_preview_code_v3',previewCode);$('previewCode').textContent=previewCode;if(window.GPWifi&&typeof window.GPWifi.advertise==='function')try{window.GPWifi.advertise(previewCode)}catch(e){}$('deviceIdentity').textContent=projectionDeviceName;$('forgetControl').hidden=!pairedControls.size;peer=new Peer('gamesplanet-preview-v3-'+previewCode)}else{peer=new Peer();render()}let p=peer;p.on('open',()=>{if(p!==peer)return;status(isDisplay?'Waiting for control phone':'Ready — enter preview code');if(!isDisplay)for(const code of Object.keys(saved))if(!displays.has(code))connect(code,true)});p.on('connection',c=>{if(!isDisplay){c.close();return}receive(c)});p.on('error',e=>{if(p!==peer)return;if(e.type==='unavailable-id'&&isDisplay){status('This code is already in use. Close another copy of the Projection page and reload.');return}status(e.type==='peer-unavailable'?'Projection unavailable — retrying.':'Connection error. Check internet.')});p.on('disconnected',()=>{status('Reconnecting…');if(peer&&!peer.destroyed)peer.reconnect()})}
-function connect(code,automatic=false,fromWifi=false){if(automatic&&blockedCodes.has(code))return;if(!/^\d{5}$/.test(code)){status('Enter the 5-digit Projection code.');return}if(!peer||peer.disconnected||peer.destroyed){status('Connection service unavailable. Check internet.');return}if(displays.has(code))return;let c=peer.connect('gamesplanet-preview-v3-'+code,{reliable:true}),d={code,channel:c,name:saved[code]||'Projection',ready:false,allowed:false,automatic,startedAt:Date.now(),lastAck:Date.now(),supportsAck:false};displays.set(code,d);render();c.on('open',()=>status('Projection found.'));c.on('data',m=>{if(!m||typeof m!=='object')return;if(m.type==='hello'){d.name=String(m.name||'Projection device').slice(0,70);d.ready=true;d.protocol=m.protocol||1;d.supportsAck=d.protocol>=2;d.lastAck=Date.now();if((automatic&&saved[code])||fromWifi)c.send({type:'connect',token:controlToken});render()}if(m.type==='ack'){d.lastAck=Date.now();if(m.actionId)d.appliedAction=m.actionId}if(m.type==='approved'){d.allowed=true;d.lastAck=Date.now();saved[code]=d.name;save();status('● Connected');sendOne(d);render()}if(m.type==='unpaired'){delete saved[code];save();delete displayStates[code];try{persistStates(displayStates)}catch(e){}c.close()}if(m.type==='rejected'){blockedCodes.add(code);status('Projection declined the connection. Check its code and try again.');c.close()}});c.on('close',()=>{if(displays.get(code)===d){displays.delete(code);render()}});c.on('error',()=>{if(displays.get(code)===d){displays.delete(code);render()}})}
+function boot(){
+ if(!window.Peer){status('Connection service unavailable. Reload when online.');return}
+ if(isDisplay){
+  previewCode=localStorage.getItem('gp_preview_code_v3');
+  if(!/^\d{5}$/.test(previewCode||''))previewCode=code5();
+  localStorage.setItem('gp_preview_code_v3',previewCode);
+  $('previewCode').textContent=previewCode;
+  $('deviceIdentity').textContent=projectionDeviceName;
+  $('forgetControl').hidden=!pairedControls.size;
+ }
+ const p=peer=isDisplay?new Peer('gamesplanet-preview-v3-'+previewCode):new Peer();
+ retryPeer(p,18000);
+ p.on('open',()=>{
+  if(p!==peer)return;
+  clearTimeout(bootTimer);bootTimer=null;
+  if(isDisplay){
+   if(window.GPWifi?.advertise)window.GPWifi.advertise(previewCode);
+   if(!approved)status('Ready — enter this Projection code');
+  }else{status('Ready — enter Projection code');retrySavedConnections()}
+ });
+ p.on('connection',c=>{if(p===peer&&isDisplay)receive(c);else c.close()});
+ p.on('error',e=>{
+  if(p!==peer)return;
+  if(e.type==='peer-unavailable'){
+   const code=String(e.message||'').match(/gamesplanet-preview-v3-(\d{5})/)?.[1];
+   const d=displays.get(code);
+   if(d&&!d.allowed){displays.delete(code);d.channel.close();render()}
+   status('Projection found on Wi-Fi may be offline to the connection service. Retrying…');
+   return;
+  }
+  if(e.type==='unavailable-id')status('Reclaiming the saved Projection code…');
+  else status('Connection service interrupted. Reconnecting…');
+  if(!p.open){clearTimeout(bootTimer);bootTimer=null;retryPeer(p)}
+ });
+ p.on('disconnected',()=>{
+  if(p!==peer)return;
+  if(isDisplay&&window.GPWifi?.advertise)window.GPWifi.advertise('');
+  status('Reconnecting to connection service…');
+  try{if(!p.destroyed)p.reconnect()}catch(e){}
+  retryPeer(p,8000);
+ });
+}
+function removeProjection(code){
+ const d=displays.get(code);
+ pendingRemovals[code]=true;
+ saveRemovals();
+ delete saved[code];save();
+ delete displayStates[code];try{persistStates(displayStates)}catch(e){}
+ blockedCodes.delete(code);
+ if(d){
+  displays.delete(code);
+  if(d.channel.open&&d.protocol>=4){displays.set(code,d);d.removing=true;d.allowed=false;d.channel.send({type:'unpair',token:controlToken});}
+  else{
+   if(d.channel.open)d.channel.send({type:'unpair',token:controlToken});
+   setTimeout(()=>d.channel.close(),350);
+  }
+ }
+ if(!displays.has(code))connect(code,true);
+ status('Projection removed. Waiting for the screen to confirm unpairing.');
+ render();
+}
+function connect(code,automatic=false,fromWifi=false){
+ if(!/^\d{5}$/.test(code)){status('Enter the 5-digit Projection code.');return}
+ if(!automatic){
+  if(pendingRemovals[code]){delete pendingRemovals[code];saveRemovals()}
+  blockedCodes.delete(code);
+ }
+ if(blockedCodes.has(code))return;
+ if(!automatic||fromWifi){saved[code]=wifiFound.get(code)||saved[code]||'Projection';save()}
+ if(!peer?.open||peer.disconnected||peer.destroyed){status('Waiting for connection service. Will retry automatically.');return}
+ const current=displays.get(code);
+ if(current&&!current.removing){
+  if(!automatic&&current.ready&&!current.allowed)current.channel.send({type:'connect',token:controlToken});
+  return;
+ }
+ if(current){
+  if(pendingRemovals[code])return;
+  displays.delete(code);current.channel.close();
+ }
+ const c=peer.connect('gamesplanet-preview-v3-'+code,{reliable:true});
+ const d={code,channel:c,name:saved[code]||'Projection',ready:false,allowed:false,startedAt:Date.now(),lastAck:Date.now(),supportsAck:false,removing:!!pendingRemovals[code]};
+ displays.set(code,d);render();
+ c.on('data',m=>{
+  if(!m||typeof m!=='object'||displays.get(code)!==d)return;
+  if(m.type==='hello'){
+   d.name=String(m.name||d.name).slice(0,70);
+   d.ready=true;d.protocol=m.protocol||1;d.supportsAck=d.protocol>=2;d.lastAck=Date.now();
+   if(d.removing)c.send({type:'unpair',token:controlToken});
+   else c.send({type:'connect',token:controlToken});
+   render();
+  }
+  if(m.type==='ack'){d.lastAck=Date.now();if(m.actionId)d.appliedAction=m.actionId}
+  if(m.type==='approved'&&!d.removing){
+   d.allowed=true;d.lastAck=Date.now();saved[code]=d.name;save();status('● Connected');sendOne(d);render();
+  }
+  if(m.type==='unpaired'){
+   if(d.removing){delete pendingRemovals[code];saveRemovals();status('Projection confirmed removal.')}
+   else{delete saved[code];save();delete displayStates[code];try{persistStates(displayStates)}catch(e){}}
+   c.close();
+  }
+  if(m.type==='rejected'){status('Projection declined the connection. Retrying with its saved code.');c.close()}
+ });
+ const drop=()=>{if(displays.get(code)===d){displays.delete(code);render()}};
+ c.on('close',drop);
+ c.on('error',()=>{drop();c.close()});
+}
 function updateControlStatus(){
  const count=[...controlChannels.values()].filter(d=>d.token).length;
  approved=count>0;
@@ -1709,7 +1832,7 @@ function receive(c){
   if(!controlChannels.delete(c)||!link.token)return;
   updateControlStatus();
  };
- c.on('open',()=>deviceNameReady.then(()=>{if(c.open)c.send({type:'hello',name:projectionDeviceName,protocol:3})}));
+ c.on('open',()=>deviceNameReady.then(()=>{if(c.open)c.send({type:'hello',name:projectionDeviceName,protocol:4})}));
  c.on('data',m=>{
   if(!m||typeof m!=='object'||!controlChannels.has(c))return;
   if(m.type==='connect'&&typeof m.token==='string'&&/^[a-f0-9]{48}$/.test(m.token)&&(!link.token||link.token===m.token)){
@@ -1724,13 +1847,18 @@ function receive(c){
    c.send({type:'approved'});
    return;
   }
+  if(m.type==='unpair'&&typeof m.token==='string'&&/^[a-f0-9]{48}$/.test(m.token)&&(!link.token||m.token===link.token)){
+   pairedControls.delete(m.token);
+   try{savePairedControls()}catch(e){return}
+   for(const [old,oldLink] of controlChannels)if(old!==c&&oldLink.token===m.token){controlChannels.delete(old);old.close()}
+   controlChannels.delete(c);
+   updateControlStatus();
+   c.send({type:'unpaired'});
+   setTimeout(()=>c.close(),350);
+   return;
+  }
   if(!link.token)return;
   link.lastSeen=Date.now();
-  if(m.type==='unpair'&&m.token===link.token){
-   pairedControls.delete(link.token);
-   try{savePairedControls()}catch(e){}
-   closed();c.close();return;
-  }
   if(m.type==='refresh'){location.reload();return}
   if(m.type==='display-settings'){
    if(m.weatherCity)receiveWeatherCity(m.weatherCity);
@@ -1770,7 +1898,7 @@ $('forgetControl').onclick=()=>{
 };
 $('findPreview').onclick=()=>{let code=$('previewInput').value.trim();connect(code,false)};
 let wifiFound=new Map();
-function showWifiResults(){let box=$('wifiResults');box.replaceChildren();for(const [code,name] of wifiFound){let row=document.createElement('div'),label=document.createElement('p'),button=document.createElement('button');label.textContent=name+' ('+code+')';button.className='secondary';let d=displays.get(code);button.textContent=d?.allowed?'Connected':'Connect Projection';button.disabled=!!d?.allowed;button.onclick=()=>{blockedCodes.delete(code);let existing=displays.get(code);if(existing?.ready&&!existing.allowed){existing.channel.send({type:'connect',token:controlToken});return}if(existing){displays.delete(code);existing.channel.close()}connect(code,false,true);status('Connecting '+name+'…')};row.append(label,button);box.append(row)}}
+function showWifiResults(){let box=$('wifiResults');box.replaceChildren();for(const [code,name] of wifiFound){let row=document.createElement('div'),label=document.createElement('p'),button=document.createElement('button');label.textContent=name+' ('+code+')';button.className='secondary';let d=displays.get(code);button.textContent=d?.allowed?'Connected':'Connect Projection';button.disabled=!!d?.allowed;button.onclick=()=>{blockedCodes.delete(code);connect(code,false,true)};row.append(label,button);box.append(row)}}
 window.gpFoundProjection=(code,name)=>{if(isDisplay||!/^\d{5}$/.test(code)||typeof name!=='string')return;wifiFound.set(code,name.slice(0,70)||'Projection');$('wifiStatus').textContent='Select a Projection to connect.';showWifiResults()};
 window.gpSearchFinished=()=>{if(!isDisplay&&!wifiFound.size)$('wifiStatus').textContent='No Projection found. Check both apps and Wi-Fi, then search again.'};
 $('searchWifi').onclick=()=>{wifiFound.clear();showWifiResults();if(!window.GPWifi||typeof window.GPWifi.search!=='function'){$('wifiStatus').textContent='Open the updated Android Control app to search Wi-Fi. You can still connect using the code.';return}$('wifiStatus').textContent='Searching for Projections on Wi-Fi…';try{window.GPWifi.search()}catch(e){$('wifiStatus').textContent='Search unavailable. Use the code to connect.'}};
@@ -1797,8 +1925,8 @@ $('calcExpression').oninput=()=>{preparedCalculation=null};$('calcGst').onchange
 $('calcButtons').onclick=e=>{let b=e.target.closest('button[data-key]');if(!b)return;let input=$('calcExpression'),k=b.dataset.key;if(k==='='){$('calculate').click();return}if(k==='clear'){input.value='';$('calcResult').textContent='';preparedCalculation=null;return}if(preparedCalculation&&k!=='back'){input.value=/^[+*/-]$/.test(k)?preparedCalculation.subtotal:''}if(k==='back')input.value=input.value.slice(0,-1);else if(input.value.length+k.length<=120)input.value+=k;$('calcResult').textContent='';preparedCalculation=null};
 $('generate').onclick=()=>{let v=$('amount').value;if(!/^\d{1,6}(\.\d{1,2})?$/.test(v)||+v<=0||+v>999999){$('message').textContent='Enter a valid amount greater than ₹0.';return}let calc=preparedCalculation&&preparedCalculation.total===Number(v).toFixed(2)?preparedCalculation:null;let next={amount:Number(v).toFixed(2),account:$('account').value,permanent:$('permanent').checked,calculation:calc},target=$('targetDisplay').value;if(!applySelection(next))return;show('local',next.amount,next.account);$('message').textContent=target==='all'?'QR sent to all selected Projections.':'QR sent to the selected Projection. Offline Projection updates when it reconnects.'};
 $('clear').onclick=()=>{preparedCalculation=null;let target=$('targetDisplay').value,next={amount:null,account:'surendra',permanent:false};if(!applySelection(next))return;$('permanent').checked=false;show('local',null);$('message').textContent=target==='all'?'QR closed on all Projections. Offline Projections update when they reconnect.':'QR closed on selected Projection. It updates when it reconnects.'};
-function resetStale(force){if(isDisplay)return;let now=Date.now();for(const [code,d] of displays){let stale=(!d.ready&&now-d.startedAt>20000)||(d.allowed&&d.supportsAck&&now-d.lastAck>20000)||(force&&d.allowed&&d.supportsAck&&now-d.lastAck>10000);if(stale){displays.delete(code);try{d.channel.close()}catch(e){};render()}}}
-function resumeConnections(){if(peer?.disconnected&&!peer.destroyed){try{peer.reconnect()}catch(e){}}if(!isDisplay){resetStale(true);for(const code of Object.keys(saved))if(!displays.has(code))connect(code,true);sendAll()}}
+function resetStale(force){if(isDisplay)return;let now=Date.now();for(const [code,d] of displays){let stale=((!d.allowed||d.removing)&&now-d.startedAt>12000)||(d.allowed&&d.supportsAck&&now-d.lastAck>20000)||(force&&d.allowed&&d.supportsAck&&now-d.lastAck>10000);if(stale){displays.delete(code);try{d.channel.close()}catch(e){};render()}}}
+function resumeConnections(){if(peer?.disconnected&&!peer.destroyed){try{peer.reconnect()}catch(e){}}if(!isDisplay){resetStale(true);retrySavedConnections();sendAll()}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)resumeConnections()});window.addEventListener('pageshow',resumeConnections);window.addEventListener('online',resumeConnections);
 function ledDigit(n,index){const patterns=['abcdef','bc','abdeg','abcdg','bcfg','acdfg','acdefg','abc','abcdefg','abcdfg'],on=patterns[Number(n)]||'';const shapes={a:'8,2 35,2 30,9 13,9',b:'37,4 37,27 30,31 30,11',c:'37,34 37,57 30,50 30,36',d:'8,59 35,59 30,52 13,52',e:'6,34 13,36 13,50 6,57',f:'6,4 13,11 13,31 6,27',g:'8,30 13,25 30,25 35,30 30,35 13,35'};const colors=[['#ff08ee','#ff4812','#ff18df','#f000fa','#b62aff','#fb22ff','#ff09e5'],['#fbff17','#68f629','#fff72a','#edff21','#ffa600','#ffde12','#f9f925'],['#29e7ff','#23a9ff','#00d9f7','#12e5f9','#05f5a8','#00efa6','#10e8ff'],['#174cff','#8e26ff','#1257ff','#1347ff','#1d95ff','#3552ff','#203cff']],palette=colors[index]||colors[0];return '<svg class="led-digit led-'+(index||0)+'" viewBox="0 0 43 61" aria-hidden="true">'+Object.keys(shapes).map((k,i)=>'<polygon points="'+shapes[k]+'" fill="'+(on.includes(k)?palette[i]:'none')+'" stroke="'+(on.includes(k)?'#18151b':'none')+'" stroke-width=".5"/>').join('')+'</svg>'}
 // Online UTC time anchored to a monotonic timer; never uses the device wall clock.
@@ -1823,7 +1951,7 @@ function updateClock(){let now=indiaClockDate();if(!now)return;let h=now.getUTCH
 
 syncIndiaTime();setInterval(syncIndiaTime,60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncIndiaTime()});updateClock();setInterval(updateClock,1000);setInterval(rotateIdleSlides,1000);setInterval(()=>refreshWeather(false),60000);setClockStyle(selectedClock);showCalculation(null);$('display').classList.toggle('clock-idle',!persistentPreview);document.body.classList.toggle('idle-clock',!persistentPreview);
 if(state.permanent){$('permanent').checked=true;show('local',state.amount,state.account)}
-setInterval(()=>{if(!isDisplay){resetStale(false);for(const code of Object.keys(saved))if(!displays.has(code))connect(code,true);sendAll()}else{let expired=false;for(const [c,d] of controlChannels)if(Date.now()-d.lastSeen>(d.token?30000:90000)){controlChannels.delete(c);c.close();expired=expired||!!d.token}if(expired)updateControlStatus()}},5000);setMode(isDisplay);
+setInterval(()=>{if(!isDisplay){resetStale(false);retrySavedConnections();sendAll()}else{let expired=false;for(const [c,d] of controlChannels)if(Date.now()-d.lastSeen>(d.token?30000:90000)){controlChannels.delete(c);c.close();expired=expired||!!d.token}if(expired)updateControlStatus()}},5000);setMode(isDisplay);
 </script><script>
 // Older Android WebViews cannot report their installed APK version. Offer a
 // non-blocking link to the current build, without claiming an update is needed.
