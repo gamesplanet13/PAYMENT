@@ -1804,6 +1804,12 @@ function connect(code,automatic=false,fromWifi=false){
   if(pendingRemovals[code])return;
   displays.delete(code);current.channel.close();
  }
+ // Restore the pre-LAN internet-first pairing path for remote devices.
+ // Wi-Fi discovery remains available separately and when internet signaling is down.
+ if(!fromWifi&&peer?.open&&!peer.disconnected&&!peer.destroyed){
+  connectOnline(code);
+  return;
+ }
  if(qrLan&&lanFound.has(code)){
   attachProjection(code,qrLan.connect(lanFound.get(code)));
   return;
