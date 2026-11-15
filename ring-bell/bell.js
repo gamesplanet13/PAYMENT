@@ -4,6 +4,37 @@
  let code=localStorage.getItem(key);if(!/^\d{5}$/.test(code||'')){code=String(10000+Math.floor(Math.random()*90000));localStorage.setItem(key,code)}$('myCode').textContent=code;$('code').value=localStorage.getItem('gp-bell-target-'+role)||'';
  let peer=null,conn=null,local=null,cam=null,connections=[],state='idle',dialSequence=0,ready=false,muted=false,speakerMuted=false,remoteHasVideo=false;
  const status=s=>$('status').textContent=s,native=(name,arg)=>{try{if(window.BellNative)window.BellNative[name](arg)}catch(_){}};
+ const savedKey='gp-bell-saved-'+role, removeKey='gp-bell-remove-'+role;
+ function readCodes(key){try{return new Set(JSON.parse(localStorage.getItem(key)||'[]').filter(c=>/^\d{5}$/.test(c)))}catch(_){return new Set()}}
+ const contacts=readCodes(savedKey), pending=readCodes(removeKey), removalChannels=new Map(), removalLookups=new Set();
+ function renderContacts(){
+  const list=$('savedCodes');
+  if(list?.replaceChildren)list.replaceChildren(...[...contacts].map(c=>{const item=document.createElement('option');item.value=c;return item}));
+ }
+ function persistContacts(){
+  localStorage.setItem(savedKey,JSON.stringify([...contacts]));
+  localStorage.setItem(removeKey,JSON.stringify([...pending]));
+  renderContacts();
+ }
+ function peerCode(c){return typeof c?.peer==='string'?c.peer.match(/(\d{5})$/)?.[1]:null}
+ function saveContact(c){
+  const target=peerCode(c);if(!target)return;
+  pending.delete(target);contacts.add(target);
+  $('code').value=target;localStorage.setItem('gp-bell-target-'+role,target);persistContacts();
+ }
+ function forgetContact(target){
+  contacts.delete(target);
+  if(localStorage.getItem('gp-bell-target-'+role)===target)localStorage.removeItem('gp-bell-target-'+role);
+  if($('code').value===target)$('code').value='';
+  persistContacts();
+ }
+ function receiveRemoval(c,message){
+  if(message?.type!=='forget-contact')return false;
+  const target=peerCode(c);
+  if(target){forgetContact(target);c.send({type:'contact-forgotten'});setTimeout(()=>c.close(),350)}
+  return true;
+ }
+ renderContacts();
  let audioContext=null,ringTimer=null,tone=null;
  const audioButton=$('enableSound'),AudioContext=window.AudioContext||window.webkitAudioContext;
  audioButton.hidden=!!window.BellNative||!AudioContext;
@@ -50,10 +81,10 @@
   send({type:'hangup'});release();status('कॉल का जवाब नहीं मिला।');
  }},45000);
  c.on('close',()=>clearTimeout(unanswered));
- c.on('open',()=>{if(conn!==c)return;if(outgoing){send({type:'ring'});status('घंटी भेजी जा रही है…')}});c.on('data',m=>{if(conn!==c||!m)return;
+ c.on('open',()=>{if(conn!==c)return;if(outgoing){send({type:'ring'});status('घंटी भेजी जा रही है…')}});c.on('data',m=>{if(conn!==c||!m||receiveRemoval(c,m))return;
  if(m.type==='ring'&&state==='idle'){state='ringing';update();startRinging();send({type:'preview-ready'});status('🔔 कॉल आ रही है। कॉल उठाने तक आपका माइक बंद है।');return}
  if(m.type==='preview-ready'&&state==='calling'&&local){let call=startMedia(c,local,'preview');setupMedia(call);status(local.getVideoTracks().length?'आपकी वीडियो भेजी जा रही है। जवाब का इंतज़ार करें।':'आपकी आवाज़ भेजी जा रही है। जवाब का इंतज़ार करें।');return}
- if(m.type==='accepted'&&state==='calling'){state='active';update();status('कॉल जुड़ गई।');return}
+ if(m.type==='accepted'&&state==='calling'){saveContact(c);state='active';update();status('कॉल जुड़ गई।');return}
  if(m.type==='busy'){release();status('दूसरा डिवाइस अभी कॉल पर है। थोड़ी देर बाद फिर कॉल करें।');return}
  if(m.type==='hangup'||m.type==='rejected'){release();status('कॉल समाप्त हुई।')}
  });c.on('close',()=>{if(conn===c){release();status('कनेक्शन बंद हुआ।')}});c.on('error',()=>{if(conn===c){release();status('कनेक्शन नहीं मिला।')}})}
@@ -63,7 +94,9 @@
  }
  function receiveConnection(c){
   if(state!=='idle'||conn){
-   c.on('open',()=>{c.send({type:'busy'});setTimeout(()=>c.close(),400)});
+   let replied=false;
+   c.on('data',m=>{if(receiveRemoval(c,m))replied=true});
+   c.on('open',()=>setTimeout(()=>{if(!replied&&c.open){c.send({type:'busy'});setTimeout(()=>c.close(),350)}},250));
    return;
   }
   setupData(c,false);
@@ -98,6 +131,8 @@
   if(state!=='idle'||conn)return;
   const target=$('code').value.trim();
   if(!/^\d{5}$/.test(target))return status('दूसरे डिवाइस का सही 5 अंकों का कोड डालें।');
+  if(pending.delete(target))persistContacts();
+  const removal=removalChannels.get(target);if(removal){removalChannels.delete(target);removal.close()}
   const sequence=++dialSequence;
   enableAudio().catch(()=>{});state='capturing';update();
   status('कैमरा और माइक की अनुमति दें…');
@@ -121,14 +156,43 @@
    setTimeout(()=>{if(conn===c&&!c.open){release();status('डिवाइस नहीं मिला। कोड और नेटवर्क जाँचें।')}},25000);
   }catch(_){release();status('कनेक्शन नहीं बना। फिर कोशिश करें।')}
  }
+ function tryRemovals(){
+  for(const target of pending){
+   if(removalChannels.has(target)||removalLookups.has(target))continue;
+   removalLookups.add(target);
+   (async ()=>{
+    const found=lan?await findOnLan(target):null;
+    if(!pending.has(target)||(!found&&(!ready||!peer?.open)))return;
+    const id=other==='bell'?prefix+target:prefix+'ring-'+target;
+    const c=found?lan.connect(found):peer.connect(id,{reliable:true});
+    removalChannels.set(target,c);
+    const clear=()=>{if(removalChannels.get(target)===c)removalChannels.delete(target)};
+    c.on('open',()=>c.send({type:'forget-contact'}));
+    c.on('data',m=>{if(m?.type==='contact-forgotten'){
+     pending.delete(target);persistContacts();clear();c.close();
+     if(state==='idle')status('दूसरे डिवाइस ने हटाने की पुष्टि की।');
+    }});
+    c.on('close',clear);c.on('error',clear);
+    setTimeout(()=>{if(removalChannels.get(target)===c){clear();c.close()}},6500);
+   })().catch(()=>{}).finally(()=>removalLookups.delete(target));
+  }
+ }
+ $('removeTarget').onclick=()=>{
+  const target=$('code').value.trim();
+  if(!/^\d{5}$/.test(target))return status('हटाने के लिए 5 अंकों का कोड डालें।');
+  pending.add(target);forgetContact(target);tryRemovals();
+  status('डिवाइस हटाया गया। दूसरे डिवाइस के ऑनलाइन होने पर वहाँ से भी हटेगा।');
+ };
+ const removalTimer=typeof window.setInterval==='function'?window.setInterval(tryRemovals,6000):null;
+ window.addEventListener('online',tryRemovals);
  $('dial').onclick=()=>dial(null);
- $('accept').onclick=async()=>{if(state!=='ringing')return;stopRinging();enableAudio().catch(()=>{});state='answering';update();try{const s=await microphone();if(state!=='answering'){s.getTracks().forEach(t=>t.stop());return}local=s;state='active';native('setCallAudio',true);let call=startMedia(conn,local,'return');setupMedia(call);if(!send({type:'accepted'}))throw Error('disconnected');update();status('कॉल जुड़ गई। आपका कैमरा बंद है।')}catch(_){send({type:'rejected'});release();status('माइक्रोफोन की अनुमति जाँचें।')}};
+ $('accept').onclick=async()=>{if(state!=='ringing')return;stopRinging();enableAudio().catch(()=>{});state='answering';update();try{const s=await microphone();if(state!=='answering'){s.getTracks().forEach(t=>t.stop());return}local=s;state='active';native('setCallAudio',true);let call=startMedia(conn,local,'return');setupMedia(call);if(!send({type:'accepted'}))throw Error('disconnected');saveContact(conn);update();status('कॉल जुड़ गई। आपका कैमरा बंद है।')}catch(_){send({type:'rejected'});release();status('माइक्रोफोन की अनुमति जाँचें।')}};
  $('hangup').onclick=()=>{send({type:state==='ringing'?'rejected':'hangup'});release();status('कॉल समाप्त हुई।')};
  $('mic').onclick=()=>{if(!local)return;muted=!muted;local.getAudioTracks().forEach(t=>t.enabled=!muted);update()};
  $('camera').onclick=async()=>{if(state!=='active')return;let current=cam||(local&&local.getVideoTracks().length?local:null);if(current){let tracks=current.getVideoTracks();let enable=!tracks.some(t=>t.enabled);tracks.forEach(t=>t.enabled=enable);update();return}try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});if(state!=='active'){s.getTracks().forEach(t=>t.stop());return}cam=s;$('localVideo').srcObject=s;setupMedia(startMedia(conn,s,'camera'));update()}catch(_){status('कैमरा की अनुमति दें।')}};
  function volume(){let v=speakerMuted?0:Number($('volume').value);$('audio').muted=speakerMuted;$('remoteVideo').muted=speakerMuted;try{$('audio').volume=v/100;$('remoteVideo').volume=v/100}catch(_){}native('setSpeakerVolume',v)}
  $('speaker').onclick=()=>{speakerMuted=!speakerMuted;volume();update()};$('volume').oninput=()=>{speakerMuted=false;volume();update()};
- window.addEventListener('keydown',e=>{if(e.key==='F8'&&state==='idle'){$('dial').click();e.preventDefault()}});window.addEventListener('beforeunload',()=>{send({type:'hangup'});release()});
+ window.addEventListener('keydown',e=>{if(e.key==='F8'&&state==='idle'){$('dial').click();e.preventDefault()}});window.addEventListener('beforeunload',()=>{if(removalTimer)clearInterval(removalTimer);send({type:'hangup'});release()});
  if(!window.GurbaniPeer)return status('कनेक्शन लाइब्रेरी नहीं मिली।');let id=role==='bell'?prefix+code:prefix+'ring-'+code;
  GurbaniPeer.start({id:()=>id,
   onPeer:p=>{peer=p;p.on('call',m=>receiveCall(m,null))},
@@ -136,7 +200,7 @@
   onOpen:()=>{ready=true;if(state==='idle')status('तैयार है। दूसरे डिवाइस का कोड डालें।')},
   onConnection:receiveConnection,
   onCollision:()=>{ready=false;if(!lan)status('यह कोड व्यस्त है। बाद में दोबारा खोलें।')},
-  onTargetUnavailable:()=>{if(conn&&!conn.lan){release();status('दूसरा डिवाइस नहीं मिला। इंटरनेट और कोड जाँचें।')}},
+  onTargetUnavailable:e=>{if(conn&&!conn.lan&&String(e?.message||'').endsWith(conn.peer)){release();status('दूसरा डिवाइस नहीं मिला। इंटरनेट और कोड जाँचें।')}},
  });
  if(lan)status('Wi-Fi पर खोजें या दूसरे डिवाइस का कोड डालें।');
  update();

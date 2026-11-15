@@ -1,6 +1,6 @@
 package in.gamesplanet.qrcontrol;
 
-import android.app.Activity;
+import in.gamesplanet.qrlan.LanBridge;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.view.View;
@@ -19,10 +19,11 @@ import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
-public class MainActivity extends Activity {
+public class MainActivity extends SessionActivity {
   private static final String CONTROL = "https://gamesplanet13.github.io/PAYMENT/";
   private static final int DISCOVERY_PORT = 46822;
   private UpdateChecker updater;
+  private LanBridge qrLan;
   private WebView web;
   private Button retry;
   private volatile boolean scanning;
@@ -81,9 +82,11 @@ public class MainActivity extends Activity {
       }
       @Override public void onReceivedError(WebView view,WebResourceRequest req,WebResourceError error){if(req.isForMainFrame()){web.setVisibility(View.GONE);retry.setVisibility(View.VISIBLE);}}
     });
-    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);web.loadUrl(CONTROL);
+    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);qrLan=new LanBridge(this,(event,id,data)->runOnUiThread(()->{
+      if(web!=null)web.evaluateJavascript("window.gpQRLanEvent&&window.gpQRLanEvent("+JSONObject.quote(event)+","+JSONObject.quote(id)+","+JSONObject.quote(data)+")",null);
+    }));web.addJavascriptInterface(qrLan,"GPQrLan");web.loadUrl(CONTROL);
   }
-  @Override public void onBackPressed(){if(web!=null&&web.canGoBack())web.goBack();else super.onBackPressed();}
-  @Override protected void onResume(){super.onResume();if(updater==null)updater=new UpdateChecker(this);updater.start();}
-  @Override protected void onDestroy(){if(web!=null){web.removeJavascriptInterface("GPWifi");web.destroy();web=null;}super.onDestroy();}
+  @Override protected void onResume(){super.onResume();if(updater==null)updater=new UpdateChecker(this);updater.resume();}
+  @Override protected void onPause(){if(updater!=null)updater.pause();super.onPause();}
+  @Override protected void onDestroy(){if(qrLan!=null)qrLan.shutdown();if(updater!=null)updater.pause();if(web!=null){web.removeJavascriptInterface("GPWifi");web.destroy();web=null;}super.onDestroy();}
 }

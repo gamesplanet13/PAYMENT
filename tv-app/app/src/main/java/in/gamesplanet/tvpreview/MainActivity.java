@@ -1,6 +1,6 @@
 package in.gamesplanet.tvpreview;
 
-import android.app.Activity;
+import in.gamesplanet.qrlan.LanBridge;
 import android.os.Bundle;
 import android.os.Build;
 import android.content.Context;
@@ -29,10 +29,11 @@ import org.json.JSONArray;
 import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
-public class MainActivity extends Activity {
+public class MainActivity extends SessionActivity {
   private static final String PREVIEW="https://gamesplanet13.github.io/PAYMENT/preview.html";
   private static final int DISCOVERY_PORT=46822;
   private UpdateChecker updater;
+  private LanBridge qrLan;
   private WebView web; private Button retry; private volatile String projectionCode=""; private volatile boolean running=true; private DatagramSocket socket; private WifiManager.MulticastLock wifiLock;
   private class WifiBridge {
     @JavascriptInterface public long getAppVersion() {
@@ -94,9 +95,12 @@ public class MainActivity extends Activity {
       @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return !"gamesplanet13.github.io".equalsIgnoreCase(request.getUrl().getHost());}
       @Override public void onReceivedError(WebView view,WebResourceRequest req,WebResourceError error){if(req.isForMainFrame()){web.setVisibility(View.GONE);retry.setVisibility(View.VISIBLE);retry.requestFocus();}}
     });
-    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);startDiscovery();web.loadUrl(PREVIEW);web.requestFocus();
+    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);qrLan=new LanBridge(this,(event,id,data)->runOnUiThread(()->{
+      if(web!=null)web.evaluateJavascript("window.gpQRLanEvent&&window.gpQRLanEvent("+JSONObject.quote(event)+","+JSONObject.quote(id)+","+JSONObject.quote(data)+")",null);
+    }));web.addJavascriptInterface(qrLan,"GPQrLan");startDiscovery();web.loadUrl(PREVIEW);web.requestFocus();
   }
   @Override public boolean onKeyDown(int code,KeyEvent event){if(code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE){web.reload();return true;}return super.onKeyDown(code,event);}
-  @Override protected void onResume(){super.onResume();if(updater==null)updater=new UpdateChecker(this);updater.start();}
-  @Override protected void onDestroy(){running=false;if(socket!=null)socket.close();if(web!=null){web.removeJavascriptInterface("GPWifi");web.destroy();web=null;}super.onDestroy();}
+  @Override protected void onResume(){super.onResume();if(updater==null)updater=new UpdateChecker(this);updater.resume();}
+  @Override protected void onPause(){if(updater!=null)updater.pause();super.onPause();}
+  @Override protected void onDestroy(){if(qrLan!=null)qrLan.shutdown();if(updater!=null)updater.pause();running=false;if(socket!=null)socket.close();if(web!=null){web.removeJavascriptInterface("GPWifi");web.destroy();web=null;}super.onDestroy();}
 }

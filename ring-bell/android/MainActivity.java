@@ -8,8 +8,8 @@ import android.media.ToneGenerator;
 import android.webkit.*;
 import org.json.JSONObject;
 
-public class MainActivity extends Activity {
- private WebView web; private LanBridge lan; private PermissionRequest pending; private AudioManager audio; private ToneGenerator tone; private Handler handler=new Handler(); private boolean ringing=false;
+public class MainActivity extends SessionActivity {
+ private WebView web; private LanBridge lan; private UpdateChecker updater; private PermissionRequest pending; private AudioManager audio; private ToneGenerator tone; private Handler handler=new Handler(); private boolean ringing=false;
  private final Runnable repeat=new Runnable(){public void run(){if(!ringing)return; try{if(tone==null)tone=new ToneGenerator(AudioManager.STREAM_RING,85); tone.startTone(ToneGenerator.TONE_PROP_BEEP2,650);}catch(Exception e){} handler.postDelayed(this,1250);}};
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().addFlags(128);audio=(AudioManager)getSystemService(AUDIO_SERVICE);web=new WebView(this);setContentView(web);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);web.getSettings().setMediaPlaybackRequiresUserGesture(false);web.addJavascriptInterface(new Bridge(),"BellNative");lan=new LanBridge(this);web.addJavascriptInterface(lan,"BellWifi");
  web.setWebViewClient(new WebViewClient(){
@@ -33,5 +33,7 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void setCallAudio(boolean enabled){runOnUiThread(()->{if(!allowed())return;try{audio.setMode(enabled?AudioManager.MODE_IN_COMMUNICATION:AudioManager.MODE_NORMAL);audio.setSpeakerphoneOn(enabled);}catch(Exception e){}});}
  }
  private void stopTone(){ringing=false;handler.removeCallbacks(repeat);if(tone!=null){tone.release();tone=null;}}
+ @Override protected void onResume(){super.onResume();if(updater==null)updater=new UpdateChecker(this);updater.resume();}
+ @Override protected void onPause(){if(updater!=null)updater.pause();super.onPause();}
  @Override public void onDestroy(){stopTone();if(lan!=null)lan.shutdown();try{audio.setSpeakerphoneOn(false);audio.setMode(AudioManager.MODE_NORMAL);}catch(Exception e){} if(pending!=null)pending.deny();web.destroy();web=null;super.onDestroy();}
 }

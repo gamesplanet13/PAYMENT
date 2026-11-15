@@ -2,6 +2,7 @@ plugins { id 'com.android.application' }
 android {
  namespace 'in.gamesplanet.qrcontrol'
  compileSdk 35
- defaultConfig { applicationId 'in.gamesplanet.qrcontrol.wifi'; minSdk 23; targetSdk 35; versionCode 2026111501; versionName '2026.11.15 22:26' }
+ sourceSets.main.java.srcDir '../../qr-lan'
+ defaultConfig { applicationId 'in.gamesplanet.qrcontrol.wifi'; minSdk 23; targetSdk 35; versionCode 2026111502; versionName '2026.11.15.2' }
 }
 
