@@ -63,10 +63,11 @@ PROBE = r'''(function(){
 try {
  const result=document.getElementById('displayResult');
  if(!result) return {ready:false};
- const owner=!!localStorage.getItem('gp_preview_owner_v3');
+ const controls=JSON.parse(localStorage.getItem('gp_preview_controls_v1')||'null');
+ const paired=Array.isArray(controls)?controls.length>0:!!localStorage.getItem('gp_preview_owner_v3');
  const qr=!result.hidden;
  const connected=typeof approved!=='undefined' && !!approved;
- return {ready:true,paired:owner,connected:connected,qr:qr,fingerprint:qr?[(document.getElementById('displayPrice')||{}).textContent,(document.getElementById('payeeName')||{}).textContent].join('|'):''};
+ return {ready:true,paired:paired,connected:connected,qr:qr,fingerprint:qr?[(document.getElementById('displayPrice')||{}).textContent,(document.getElementById('payeeName')||{}).textContent].join('|'):''};
 }catch(e){return {ready:false};}})()'''
 CLOCK_ON = r'''(function(){
 if(!document.getElementById('gpWinStyle')){const s=document.createElement('style');s.id='gpWinStyle';s.textContent=`

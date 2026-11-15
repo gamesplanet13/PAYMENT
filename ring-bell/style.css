@@ -1,0 +1,13 @@
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#080b12;color:#f6f8ff;font:17px system-ui,sans-serif;display:grid;place-items:center}main{width:min(100%,470px);padding:30px 22px;text-align:center}.icon{font-size:68px}h1{font-size:38px;margin:8px}p{color:#c3cbda;line-height:1.5}label{display:block;text-align:left;margin:28px 0 7px;color:#d9e0ef}input{width:100%;font-size:34px;font-weight:700;letter-spacing:.25em;text-align:center;background:#171e2b;color:white;border:1px solid #65758e;border-radius:16px;padding:17px}button{width:100%;padding:18px;border:0;border-radius:15px;font-size:20px;font-weight:750;cursor:pointer;margin-top:14px}.primary{background:#58d7a2;color:#062c20}.danger{background:#bd2f4b;color:white}.secondary{background:#29364a;color:white}.code{font-size:clamp(54px,14vw,76px);font-weight:850;letter-spacing:.12em;color:#f4d185}.hint{font-size:13px;color:#98a4b6}#status{min-height:2.8em;color:#f1d18b;overflow-wrap:anywhere}button[hidden]{display:none}
+.check{display:flex;align-items:center;gap:10px;margin:18px 0 2px;font-size:16px}.check input{width:22px;height:22px}.videos{position:relative;margin-top:15px;background:#111;border-radius:15px;overflow:hidden}.videos[hidden]{display:none}#remoteVideo{display:block;width:100%;min-height:180px;max-height:50vh;object-fit:contain}#localVideo{position:absolute;right:8px;bottom:8px;width:25%;border:2px solid white;border-radius:8px}
+#controls[hidden]{display:none}#volume{width:100%;padding:0;letter-spacing:normal}#controls button{font-size:16px;padding:12px}
+
+.app-icon{width:88px;height:88px;border-radius:22px;object-fit:cover}
+
+nav{display:flex;justify-content:center;flex-wrap:wrap;gap:10px 24px;margin-bottom:22px}
+nav a{color:#a7f3d0;text-underline-offset:3px}
+.role-card{display:flex;align-items:center;gap:16px;margin-top:16px;padding:14px;border:1px solid #3b4b62;border-radius:18px;background:#171e2b;color:inherit;text-align:left;text-decoration:none}
+.role-card .app-icon{width:56px;height:56px;border-radius:14px}
+.role-card strong,.role-card small{display:block}
+.role-card small{margin-top:4px;color:#c3cbda}
+a:focus-visible,button:focus-visible{outline:2px solid #f4d185;outline-offset:3px}

@@ -12,8 +12,6 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
-import android.webkit.WebStorage;
-import android.webkit.CookieManager;
 import android.webkit.WebSettings;
 import android.webkit.WebViewClient;
 import android.widget.Button;
@@ -96,15 +94,9 @@ public class MainActivity extends Activity {
       @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return !"gamesplanet13.github.io".equalsIgnoreCase(request.getUrl().getHost());}
       @Override public void onReceivedError(WebView view,WebResourceRequest req,WebResourceError error){if(req.isForMainFrame()){web.setVisibility(View.GONE);retry.setVisibility(View.VISIBLE);retry.requestFocus();}}
     });
-    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);startDiscovery();resetAndOpen(PREVIEW);web.requestFocus();
+    frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);startDiscovery();web.loadUrl(PREVIEW);web.requestFocus();
   }
   @Override public boolean onKeyDown(int code,KeyEvent event){if(code==KeyEvent.KEYCODE_MENU||code==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE){web.reload();return true;}return super.onKeyDown(code,event);}
-  private void resetAndOpen(String url){
-    web.clearCache(true); web.clearHistory(); web.clearFormData();
-    WebStorage.getInstance().deleteAllData();
-    CookieManager cookies=CookieManager.getInstance();
-    cookies.removeAllCookies(value->{cookies.flush();if(web!=null&&!isFinishing())web.loadUrl(url);});
-  }
   @Override protected void onResume(){super.onResume();if(updater==null)updater=new UpdateChecker(this);updater.start();}
   @Override protected void onDestroy(){running=false;if(socket!=null)socket.close();if(web!=null){web.removeJavascriptInterface("GPWifi");web.destroy();web=null;}super.onDestroy();}
 }
