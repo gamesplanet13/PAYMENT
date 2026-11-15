@@ -122,9 +122,13 @@
   };
  }
  function findOnLan(target){
+  if(!lan)return Promise.resolve(null);
   return new Promise(resolve=>{
-   let found=null;
-   lan.search(target,result=>{found=result},()=>resolve(found));
+   let found=null,finished=false;
+   const finish=()=>{if(finished)return;finished=true;clearTimeout(timeout);resolve(found)};
+   const timeout=setTimeout(finish,2500);
+   try{lan.search(target,result=>{if(result?.code===target){found=result;finish()}},finish)}
+   catch(_){finish()}
   });
  }
  async function dial(discovered){
@@ -142,7 +146,8 @@
    local=s;$('localVideo').srcObject=s;
   }catch(_){if(sequence===dialSequence){release();status('कैमरा और माइक की अनुमति दें।')}return}
   status('डिवाइस ढूँढ रहे हैं…');
-  const found=discovered||(lan?await findOnLan(target):null);
+  // When internet signaling is online, do not block a remote call on Wi-Fi discovery.
+  const found=discovered||(ready&&peer?.open?null:await findOnLan(target));
   if(sequence!==dialSequence)return;
   if(!found&&(!ready||!peer||!peer.open)){
    release();status('डिवाइस Wi-Fi पर नहीं मिला और इंटरनेट कनेक्शन तैयार नहीं है।');return;
@@ -161,7 +166,7 @@
    if(removalChannels.has(target)||removalLookups.has(target))continue;
    removalLookups.add(target);
    (async ()=>{
-    const found=lan?await findOnLan(target):null;
+    const found=ready&&peer?.open?null:await findOnLan(target);
     if(!pending.has(target)||(!found&&(!ready||!peer?.open)))return;
     const id=other==='bell'?prefix+target:prefix+'ring-'+target;
     const c=found?lan.connect(found):peer.connect(id,{reliable:true});
