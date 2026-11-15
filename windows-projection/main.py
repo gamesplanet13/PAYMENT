@@ -4,6 +4,7 @@ from ctypes import wintypes
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -14,13 +15,18 @@ import pystray
 from PIL import Image, ImageDraw
 from state import ProjectionState
 from updater import install_after_exit, stage_update
+from lan import ProjectionLAN
+from weather import read_weather
 
-URL = 'https://gamesplanet13.github.io/PAYMENT/preview.html'
+URL = 'https://gamesplanet13.github.io/PAYMENT/preview.html?desktop=windows'
 APP_DIR = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'GamesPlanetProjection'
 PROFILE = APP_DIR / 'webview-profile'
 IDLE_SECONDS = 60
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 kernel32.CreateMutexW.restype = wintypes.HANDLE
 kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
@@ -40,6 +46,23 @@ def get_input():
         return 0, 0
     ticks = kernel32.GetTickCount() & 0xffffffff
     return info.dwTime, ((ticks - info.dwTime) & 0xffffffff) / 1000.0
+
+def playback_blocks_clock():
+    state = wintypes.DWORD()
+    query = ctypes.windll.powrprof.CallNtPowerInformation
+    # SystemExecutionState reports display power requests, including media playback.
+    if query(16, None, 0, ctypes.byref(state), ctypes.sizeof(state)) == 0 and state.value & 2:
+        return True
+    window = user32.GetForegroundWindow()
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(window, ctypes.byref(pid))
+    if pid.value in (0, os.getpid()):
+        return False
+    rect = wintypes.RECT()
+    return bool(user32.GetWindowRect(window, ctypes.byref(rect)) and rect.left <= 0
+                and rect.top <= 0 and rect.right >= user32.GetSystemMetrics(0)
+                and rect.bottom >= user32.GetSystemMetrics(1))
+
 
 def install_autostart():
     if not getattr(sys, 'frozen', False):
@@ -109,6 +132,8 @@ class App:
         self.first = True
         self.exiting = False
         self.exit_dialog = threading.Lock()
+        self.lan = ProjectionLAN()
+        self.last_physical_input = time.monotonic()
 
     def show_window(self, clock=False):
         try:
@@ -207,16 +232,25 @@ class App:
             changed = marker != previous or current != position
             previous, position = marker, current
             with self.lock:
-                if changed and self.state.can_hide_on_input() and time.monotonic() >= self.ignore_input_until:
-                    self.state.dismiss()
-                    try: self.window.hide()
-                    except Exception: logging.exception('Could not hide projection')
+                if changed:
+                    self.last_physical_input = time.monotonic()
+                    if self.state.can_hide_on_input() and time.monotonic() >= self.ignore_input_until:
+                        self.state.dismiss()
+                        should_hide = True
+                    else:
+                        should_hide = False
+                else:
+                    should_hide = False
+            if should_hide:
+                try: self.window.hide()
+                except Exception: logging.exception('Could not hide projection')
             if self.open_event and kernel32.WaitForSingleObject(self.open_event, 0) == 0:
                 self.open_window()
 
     def loop(self):
         # Keep the PC awake to receive payments, but allow the display to turn off.
         kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+        self.lan.start()
         threading.Thread(target=self.tray_loop,daemon=True).start()
         threading.Thread(target=self.input_loop,daemon=True).start()
         if getattr(sys, 'frozen', False):
@@ -232,7 +266,9 @@ class App:
                         self.window.load_url(URL);failures=0
                     continue
                 failures=0
-                marker,idle=get_input()
+                _,idle=get_input()
+                idle=min(idle,time.monotonic()-self.last_physical_input)
+                busy_media=idle>=IDLE_SECONDS and playback_blocks_clock()
                 if self.first:
                     self.first=False
                     if not data.get('connected'):
@@ -241,7 +277,7 @@ class App:
                 with self.lock:
                     # Input is monitored independently, including when JavaScript is busy.
                     action=self.state.decide(paired=bool(data.get('paired')),connected=bool(data.get('connected')),qr=bool(data.get('qr')),
-                        fingerprint=data.get('fingerprint',''),idle=idle,input_marker=self.state.input_marker)
+                        fingerprint=data.get('fingerprint',''),idle=idle,input_marker=self.state.input_marker,media_active=busy_media)
                 if action=='new_qr':
                     self.ignore_input_until=time.monotonic()+1;wake_monitor();self.show_window(False)
                 elif action=='clock':
@@ -250,8 +286,7 @@ class App:
                     self.window.hide()
                 elif action=='pairing' and not was_visible:
                     self.show_window(False)
-                elif action=='stay' and self.state.visible and self.state.mode=='clock':
-                    self.window.evaluate_js(CLOCK_ON)
+
             except Exception:
                 logging.exception('Projection monitor error')
         kernel32.SetThreadExecutionState(0x80000000)
@@ -271,10 +306,25 @@ def main():
     install_autostart()
     app=App()
     app.open_event=kernel32.CreateEventW(None, False, False, OPEN_EVENT)
+    background_args = '--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows'
+    os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = (
+        os.environ.get('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS','') + ' ' + background_args
+    ).strip()
     app.window=webview.create_window('Games Planet Projection', URL, fullscreen=True, on_top=True, background_color='#000000')
     app.window.expose(app.request_exit)
+    def qr_advertise(code): app.lan.advertise(code)
+    def qr_send(identity, payload): app.lan.send(identity, payload)
+    def qr_close(identity): app.lan.close_link(identity)
+    def qr_poll(): return app.lan.poll()
+    def qr_weather():
+        try: return read_weather()
+        except (OSError, ValueError, KeyError):
+            logging.debug('Weather unavailable', exc_info=True)
+            return None
+    app.window.expose(qr_advertise, qr_send, qr_close, qr_poll, qr_weather)
     def on_closed():
         app.running=False
+        app.lan.close()
         if app.tray:app.tray.stop()
     app.window.events.closing += app.on_closing
     app.window.events.closed += on_closed
@@ -285,6 +335,7 @@ def main():
         webview.start(app.loop, private_mode=False, storage_path=str(PROFILE))
     finally:
         app.running=False
+        app.lan.close()
         if app.tray:app.tray.stop()
         if app.open_event: kernel32.CloseHandle(app.open_event)
         kernel32.CloseHandle(mutex)

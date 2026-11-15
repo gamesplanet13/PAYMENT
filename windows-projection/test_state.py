@@ -49,6 +49,19 @@ class Tests(unittest.TestCase):
         self.assertFalse(s.settings_open)
         self.assertTrue(s.can_hide_on_input())
 
+    def test_clock_without_any_controller_hides_and_returns(self):
+        s=ProjectionState(60)
+        self.assertEqual(self.step(s,paired=False,connected=False,idle=61),'clock')
+        self.assertTrue(s.can_hide_on_input())
+        self.assertEqual(self.step(s,paired=False,connected=False,input_marker=2),'hide')
+        self.assertEqual(self.step(s,paired=False,connected=False,idle=59,input_marker=2),'stay')
+        self.assertEqual(self.step(s,paired=False,connected=False,idle=60,input_marker=2),'clock')
+
+    def test_playback_suppresses_idle_clock_and_new_payment_still_opens(self):
+        s=ProjectionState(60)
+        self.assertEqual(self.step(s,idle=61,media_active=True),'stay')
+        self.assertEqual(self.step(s,idle=61,media_active=True,qr=True,fingerprint='new'),'new_qr')
+
     def test_new_amount_overrides_dismissal(self):
         s=ProjectionState()
         self.step(s,qr=True,fingerprint='a')

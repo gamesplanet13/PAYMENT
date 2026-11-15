@@ -12,7 +12,7 @@ class ProjectionState:
         self.settings_open = False
 
     def can_hide_on_input(self):
-        return self.visible and self.ready and self.connected and not self.settings_open
+        return self.visible and self.ready and not self.settings_open and (self.connected or self.mode != "pairing")
 
     def open_settings(self):
         self.settings_open = True
@@ -28,7 +28,7 @@ class ProjectionState:
         self.visible = False
         self.mode = 'hidden'
 
-    def decide(self, *, paired, connected, qr, fingerprint, idle, input_marker):
+    def decide(self, *, paired, connected, qr, fingerprint, idle, input_marker, media_active=False):
         moved = self.input_marker is not None and input_marker != self.input_marker
         self.input_marker = input_marker
         was_connected = self.connected
@@ -38,8 +38,6 @@ class ProjectionState:
             self.close_settings()
         if self.settings_open:
             return 'stay'
-        if not connected:
-            return 'pairing' if self.visible else 'stay'
         if not qr:
             self.fingerprint = None
             self.dismissed = None
@@ -58,6 +56,11 @@ class ProjectionState:
                 self.mode = 'qr'
                 return 'qr'
             return 'stay'
+        if media_active:
+            if self.visible and self.mode == 'clock':
+                self.dismiss()
+                return 'hide'
+            return 'stay'
         if idle >= self.idle_seconds:
             if self.mode != 'clock' or not self.visible:
                 self.mode = 'clock'
@@ -69,5 +72,5 @@ class ProjectionState:
             self.visible = False
             return 'hide'
         if self.mode == 'pairing':
-            return 'stay'
+            return 'stay' if connected or not self.visible else 'pairing'
         return 'stay'
