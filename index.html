@@ -1812,12 +1812,20 @@ function connect(code,automatic=false,fromWifi=false){
   if(lanSearches.has(code))return;
   lanSearches.add(code);
   const session=qrLan;
-  session.search(code,target=>lanFound.set(code,target),()=>{
+  let settled=false;
+  const finish=()=>{
+   if(settled)return;
+   settled=true;
+   clearTimeout(fallback);
    lanSearches.delete(code);
    if(session!==qrLan||displays.has(code)||(!saved[code]&&!pendingRemovals[code]))return;
    if(lanFound.has(code))attachProjection(code,session.connect(lanFound.get(code)));
    else connectOnline(code);
-  });
+  };
+  // LAN discovery must never block an internet connection indefinitely.
+  const fallback=setTimeout(finish,3000);
+  try{session.search(code,target=>lanFound.set(code,target),finish)}
+  catch(e){finish()}
   return;
  }
  connectOnline(code);
