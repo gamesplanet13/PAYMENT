@@ -126,37 +126,35 @@ class App:
         self.state = ProjectionState(IDLE_SECONDS)
         self.running = True
         self.tray = None
-        self.ignore_input_until = time.monotonic() + 1
+        self.ignore_input_until = 0
         self.lock = threading.RLock()
         self.open_event = None
         self.first = True
-        self.exiting = False
-        self.exit_dialog = threading.Lock()
         self.lan = ProjectionLAN()
         self.last_physical_input = time.monotonic()
 
-    def show_window(self, clock=False):
+    def show_window(self, script=CLOCK_OFF, *, on_top=False):
         try:
-            self.window.evaluate_js(CLOCK_ON if clock else CLOCK_OFF)
-            self.window.show()
+            with self.lock:
+                if not self.running or not self.state.visible:
+                    return
+                self.window.on_top = on_top
+                self.window.maximize()
+                self.window.show()
+            self.window.evaluate_js(script)
         except Exception:
             logging.exception('Could not show projection')
 
     def open_window(self, *_):
         with self.lock:
-            self.ignore_input_until = time.monotonic() + 1
             self.state.visible = True
             self.state.mode = 'pairing'
-        self.show_window(False)
+        self.show_window()
 
     def open_settings(self, *_):
         with self.lock:
             self.state.open_settings()
-        try:
-            self.window.show()
-            self.window.evaluate_js(SHOW_SETTINGS)
-        except Exception:
-            logging.exception('Could not open connection settings')
+        self.show_window(SHOW_SETTINGS)
 
     def close_settings(self, *_):
         with self.lock:
@@ -168,25 +166,8 @@ class App:
         except Exception:
             logging.exception('Could not close connection settings')
 
-    def confirm_exit(self):
-        if self.exiting:
-            return True
-        if not self.exit_dialog.acquire(blocking=False):
-            return False
-        try:
-            return self.window.create_confirmation_dialog('Exit', 'Close Games Planet Projection?')
-        finally:
-            self.exit_dialog.release()
-
-    def on_closing(self):
-        if not self.confirm_exit():
-            return False
-        self.exiting = True
-        return True
-
     def request_exit(self):
-        if self.confirm_exit():
-            self.quit()
+        self.quit()
 
     def update_loop(self):
         while self.running:
@@ -204,12 +185,11 @@ class App:
             time.sleep(300)
 
     def quit(self, *_):
-        self.exiting = True
-        self.running = False
-        if self.tray:
-            self.tray.stop()
-        if self.window:
-            self.window.destroy()
+        with self.lock:
+            if not self.running:
+                return
+            self.running = False
+        self.window.destroy()
 
     def tray_loop(self):
         img = Image.new('RGB',(64,64),'#090909')
@@ -234,16 +214,14 @@ class App:
             with self.lock:
                 if changed:
                     self.last_physical_input = time.monotonic()
-                    if self.state.can_hide_on_input() and time.monotonic() >= self.ignore_input_until:
+                    if self.running and self.state.can_hide_on_input() and (
+                        self.state.mode == 'clock' or time.monotonic() >= self.ignore_input_until
+                    ):
                         self.state.dismiss()
-                        should_hide = True
-                    else:
-                        should_hide = False
-                else:
-                    should_hide = False
-            if should_hide:
-                try: self.window.hide()
-                except Exception: logging.exception('Could not hide projection')
+                        try:
+                            self.window.hide()
+                        except Exception:
+                            logging.exception('Could not hide projection')
             if self.open_event and kernel32.WaitForSingleObject(self.open_event, 0) == 0:
                 self.open_window()
 
@@ -273,19 +251,23 @@ class App:
                     self.first=False
                     if not data.get('connected'):
                         self.window.evaluate_js(SHOW_SETTINGS)
-                was_visible=self.state.visible
                 with self.lock:
+                    was_visible=self.state.visible
                     # Input is monitored independently, including when JavaScript is busy.
+                    idle=min(idle,time.monotonic()-self.last_physical_input)
                     action=self.state.decide(paired=bool(data.get('paired')),connected=bool(data.get('connected')),qr=bool(data.get('qr')),
                         fingerprint=data.get('fingerprint',''),idle=idle,input_marker=self.state.input_marker,media_active=busy_media)
+                    if action=='new_qr':
+                        self.ignore_input_until=time.monotonic()+1
+                    elif action=='hide':
+                        self.window.hide()
                 if action=='new_qr':
-                    self.ignore_input_until=time.monotonic()+1;wake_monitor();self.show_window(False)
+                    wake_monitor()
+                    self.show_window(on_top=True)
                 elif action=='clock':
-                    self.ignore_input_until=time.monotonic()+1;self.show_window(True)
-                elif action=='hide':
-                    self.window.hide()
+                    self.show_window(CLOCK_ON, on_top=True)
                 elif action=='pairing' and not was_visible:
-                    self.show_window(False)
+                    self.show_window()
 
             except Exception:
                 logging.exception('Projection monitor error')
@@ -310,7 +292,7 @@ def main():
     os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = (
         os.environ.get('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS','') + ' ' + background_args
     ).strip()
-    app.window=webview.create_window('Games Planet Projection', URL, fullscreen=True, on_top=True, background_color='#000000')
+    app.window=webview.create_window('Games Planet Projection', URL, maximized=True, background_color='#000000')
     app.window.expose(app.request_exit)
     def qr_advertise(code): app.lan.advertise(code)
     def qr_send(identity, payload): app.lan.send(identity, payload)
@@ -322,12 +304,6 @@ def main():
             logging.debug('Weather unavailable', exc_info=True)
             return None
     app.window.expose(qr_advertise, qr_send, qr_close, qr_poll, qr_weather)
-    def on_closed():
-        app.running=False
-        app.lan.close()
-        if app.tray:app.tray.stop()
-    app.window.events.closing += app.on_closing
-    app.window.events.closed += on_closed
     def on_loaded():
         app.window.evaluate_js("window.addEventListener('keydown', e=>{if(e.key==='Escape'||e.key==='BrowserBack'||(e.altKey&&e.key==='ArrowLeft')){e.preventDefault();e.stopImmediatePropagation();window.pywebview?.api?.request_exit()}},true)")
     app.window.events.loaded += on_loaded

@@ -21,8 +21,9 @@ class Tests(unittest.TestCase):
         s=ProjectionState(60)
         self.step(s,paired=False,connected=False)
         self.assertEqual(self.step(s),'stay')
-        self.assertTrue(s.can_hide_on_input())
+        self.assertFalse(s.can_hide_on_input())
         self.assertEqual(self.step(s,qr=True,fingerprint='102'),'new_qr')
+        self.assertTrue(s.can_hide_on_input())
         self.assertEqual(self.step(s,qr=True,fingerprint='102',input_marker=2),'hide')
         self.assertEqual(self.step(s,qr=True,fingerprint='102',input_marker=2),'stay')
         self.assertEqual(self.step(s,qr=True,fingerprint='102',idle=61,input_marker=2),'clock')
@@ -39,7 +40,7 @@ class Tests(unittest.TestCase):
         self.assertTrue(s.settings_open)
         self.assertTrue(s.visible)
         s.close_settings()
-        self.assertTrue(s.can_hide_on_input())
+        self.assertFalse(s.can_hide_on_input())
 
     def test_connecting_from_settings_restores_screensaver_behavior(self):
         s=ProjectionState()
@@ -47,6 +48,8 @@ class Tests(unittest.TestCase):
         s.open_settings()
         self.assertEqual(self.step(s,paired=True,connected=True),'stay')
         self.assertFalse(s.settings_open)
+        self.assertFalse(s.can_hide_on_input())
+        self.assertEqual(self.step(s,idle=60),'clock')
         self.assertTrue(s.can_hide_on_input())
 
     def test_clock_without_any_controller_hides_and_returns(self):
