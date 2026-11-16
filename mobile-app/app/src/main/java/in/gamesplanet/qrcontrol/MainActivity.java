@@ -80,7 +80,13 @@ public class MainActivity extends SessionActivity {
         }
         return false;
       }
-      @Override public void onReceivedError(WebView view,WebResourceRequest req,WebResourceError error){if(req.isForMainFrame()){web.setVisibility(View.GONE);retry.setVisibility(View.VISIBLE);}}
+      private void showRetry(){web.setVisibility(View.GONE);retry.setVisibility(View.VISIBLE);}
+      @Override public void onReceivedError(WebView view,WebResourceRequest req,WebResourceError error){
+        if(req.isForMainFrame())showRetry();
+      }
+      @Override public void onReceivedHttpError(WebView view,WebResourceRequest req,android.webkit.WebResourceResponse error){
+        if(req.isForMainFrame()&&error.getStatusCode()>=400)showRetry();
+      }
     });
     frame.addView(web,new FrameLayout.LayoutParams(-1,-1));frame.addView(retry,new FrameLayout.LayoutParams(-1,-1));setContentView(frame);qrLan=new LanBridge(this,(event,id,data)->runOnUiThread(()->{
       if(web!=null)web.evaluateJavascript("window.gpQRLanEvent&&window.gpQRLanEvent("+JSONObject.quote(event)+","+JSONObject.quote(id)+","+JSONObject.quote(data)+")",null);

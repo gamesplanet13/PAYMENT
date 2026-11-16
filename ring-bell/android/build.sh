@@ -22,7 +22,7 @@ for role in ring bell; do
   mkdir -p "$role_dir/classes" "$role_dir/dex"
   cat >"$role_dir/AndroidManifest.xml" <<MANIFEST
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="in.gamesplanet.doorbell.$role" android:versionCode="7" android:versionName="7.0">
+    package="in.gamesplanet.doorbell.$role" android:versionCode="8" android:versionName="8.0">
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="35"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
@@ -62,7 +62,7 @@ MANIFEST
   "$bt/d8" --min-api 23 --lib "$platform" --output "$role_dir/dex" "$role_dir/classes/in/gamesplanet/bell/"*.class
   (cd "$role_dir/dex" && zip -q "$role_dir/base.apk" classes.dex)
   "$bt/zipalign" -f 4 "$role_dir/base.apk" "$role_dir/aligned.apk"
-  apk="$RING_OUTPUT/Games_Planet_${label}_v7.apk"
+  apk="$RING_OUTPUT/Games_Planet_${label}_v8.apk"
   "$bt/apksigner" sign --ks "$RING_SIGNING_KEY" --ks-key-alias ringbell \
     --ks-pass "file:$RING_SIGNING_PASSWORD_FILE" --out "$apk" "$role_dir/aligned.apk"
   "$bt/apksigner" verify "$apk"

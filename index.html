@@ -1984,7 +1984,39 @@ $('searchWifi').onclick=()=>{wifiFound.clear();showWifiResults();if(qrLan){
  });return;
 }if(!window.GPWifi||typeof window.GPWifi.search!=='function'){$('wifiStatus').textContent='Open the updated Android Control app to search Wi-Fi. You can still connect using the code.';return}$('wifiStatus').textContent='Searching for Projections on Wi-Fi…';try{window.GPWifi.search()}catch(e){$('wifiStatus').textContent='Search unavailable. Use the code to connect.'}};
 function persistStates(records){let out={};for(let code of Object.keys(records)){let x=records[code];out[code]=x.permanent===true||x.amount===null?x:{amount:null,account:'surendra',permanent:false}}localStorage.setItem('gp_display_states_v1',JSON.stringify(out))}
-function applySelection(next){next={...next,actionId:randomToken(16)};let target=$('targetDisplay').value,codes=target==='all'?Array.from(new Set([...Object.keys(saved),...displays.keys()])):[target],records={...displayStates};for(const code of codes)records[code]=next;try{persistStates(records);if(target==='all'){if(next.permanent)localStorage.setItem('gp_permanent_control_v1',JSON.stringify(next));else localStorage.removeItem('gp_permanent_control_v1')}}catch(e){$('message').textContent='Unable to save Projection settings on this device.';return false}displayStates=records;if(target==='all'){state=next;sendAll()}else{let d=displays.get(target);if(d)sendOne(d)}render();return true}
+function applySelection(next){
+ next={...next,actionId:randomToken(16)};
+ const target=$('targetDisplay').value;
+ const codes=(target==='all'?Array.from(new Set([...Object.keys(saved),...displays.keys()])):[target])
+  .filter(code=>!pendingRemovals[code]&&(saved[code]||displays.get(code)?.allowed));
+ const records={...displayStates};
+ for(const code of codes)records[code]=next;
+ try{
+  persistStates(records);
+  if(target==='all'){
+   if(next.permanent)localStorage.setItem('gp_permanent_control_v1',JSON.stringify(next));
+   else localStorage.removeItem('gp_permanent_control_v1');
+  }
+ }catch(e){$('message').textContent='Unable to save Projection settings on this device.';return null}
+ displayStates=records;
+ if(target==='all')state=next;
+ let sent=0;
+ for(const code of codes){
+  const display=displays.get(code);
+  if(!display?.allowed||!display.channel.open)continue;
+  try{sendOne(display);sent++}catch(_){}
+ }
+ render();
+ return {sent,waiting:codes.length-sent};
+}
+function reportSelection(result,cleared){
+ const local=cleared?'QR closed on this device.':'QR ready on this device.';
+ const command=cleared?'Clear request':'QR';
+ if(!result.sent&&!result.waiting){$('message').textContent=local+' No Projection selected.';return}
+ const notices=[result.sent?command+' sent to '+result.sent+' '+(result.sent===1?'Projection.':'Projections.'):local];
+ if(result.waiting)notices.push('Waiting for '+result.waiting+' '+(result.waiting===1?'Projection':'Projections')+' to reconnect.');
+ $('message').textContent=notices.join(' ');
+}
 $('targetDisplay').onchange=()=>{let target=$('targetDisplay').value,x=target==='all'?state:(displayStates[target]||state);$('permanent').checked=!!x.permanent};
 // A small arithmetic parser keeps displayed calculations and the payment amount consistent.
 function calculateExpression(raw,addGst){
@@ -2004,8 +2036,8 @@ $('calculate').onclick=()=>{let c=computeControl();preparedCalculation=c;if(c)$(
 $('sendCalculation').onclick=()=>{let c=computeControl();if(!c)return;$('amount').value=c.total;preparedCalculation=c;$('generate').click()};
 $('calcExpression').oninput=()=>{preparedCalculation=null};$('calcGst').onchange=()=>{preparedCalculation=null};$('amount').oninput=()=>{preparedCalculation=null};
 $('calcButtons').onclick=e=>{let b=e.target.closest('button[data-key]');if(!b)return;let input=$('calcExpression'),k=b.dataset.key;if(k==='='){$('calculate').click();return}if(k==='clear'){input.value='';$('calcResult').textContent='';preparedCalculation=null;return}if(preparedCalculation&&k!=='back'){input.value=/^[+*/-]$/.test(k)?preparedCalculation.subtotal:''}if(k==='back')input.value=input.value.slice(0,-1);else if(input.value.length+k.length<=120)input.value+=k;$('calcResult').textContent='';preparedCalculation=null};
-$('generate').onclick=()=>{let v=$('amount').value;if(!/^\d{1,6}(\.\d{1,2})?$/.test(v)||+v<=0||+v>999999){$('message').textContent='Enter a valid amount greater than ₹0.';return}let calc=preparedCalculation&&preparedCalculation.total===Number(v).toFixed(2)?preparedCalculation:null;let next={amount:Number(v).toFixed(2),account:$('account').value,permanent:$('permanent').checked,calculation:calc},target=$('targetDisplay').value;if(!applySelection(next))return;show('local',next.amount,next.account);$('message').textContent=target==='all'?'QR sent to all selected Projections.':'QR sent to the selected Projection. Offline Projection updates when it reconnects.'};
-$('clear').onclick=()=>{preparedCalculation=null;let target=$('targetDisplay').value,next={amount:null,account:'surendra',permanent:false};if(!applySelection(next))return;$('permanent').checked=false;show('local',null);$('message').textContent=target==='all'?'QR closed on all Projections. Offline Projections update when they reconnect.':'QR closed on selected Projection. It updates when it reconnects.'};
+$('generate').onclick=()=>{let v=$('amount').value;if(!/^\d{1,6}(\.\d{1,2})?$/.test(v)||+v<=0||+v>999999){$('message').textContent='Enter a valid amount greater than ₹0.';return}let calc=preparedCalculation&&preparedCalculation.total===Number(v).toFixed(2)?preparedCalculation:null;let next={amount:Number(v).toFixed(2),account:$('account').value,permanent:$('permanent').checked,calculation:calc};const result=applySelection(next);if(!result)return;show('local',next.amount,next.account);reportSelection(result,false)};
+$('clear').onclick=()=>{preparedCalculation=null;const result=applySelection({amount:null,account:'surendra',permanent:false});if(!result)return;$('permanent').checked=false;show('local',null);reportSelection(result,true)};
 function resetStale(force){if(isDisplay)return;let now=Date.now();for(const [code,d] of displays){let stale=((!d.allowed||d.removing)&&now-d.startedAt>12000)||(d.allowed&&d.supportsAck&&now-d.lastAck>20000)||(force&&d.allowed&&d.supportsAck&&now-d.lastAck>10000);if(stale){displays.delete(code);try{d.channel.close()}catch(e){};render()}}}
 function resumeConnections(){if(peer?.disconnected&&!peer.destroyed){try{peer.reconnect()}catch(e){}}if(!isDisplay){resetStale(true);retrySavedConnections();sendAll()}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)resumeConnections()});window.addEventListener('pageshow',resumeConnections);window.addEventListener('online',resumeConnections);

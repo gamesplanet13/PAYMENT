@@ -3,6 +3,6 @@ android {
  namespace 'in.gamesplanet.tvpreview'
  compileSdk 35
  sourceSets.main.java.srcDir '../../qr-lan'
- defaultConfig { applicationId 'in.gamesplanet.tvpreview.wifi'; minSdk 23; targetSdk 35; versionCode 2026111502; versionName '2026.11.15.2' }
+ defaultConfig { applicationId 'in.gamesplanet.tvpreview.wifi'; minSdk 23; targetSdk 35; versionCode 2026111701; versionName '2026.11.17.1' }
 }
 
