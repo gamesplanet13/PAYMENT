@@ -190,6 +190,57 @@
  };
  const removalTimer=typeof window.setInterval==='function'?window.setInterval(tryRemovals,6000):null;
  window.addEventListener('online',tryRemovals);
+ // IoT ESP32 bell alerts use a separate authenticated Internet relay.
+ // They never impersonate a PeerJS camera/voice call.
+ if(role==='bell'&&$('iotSettings')){
+   const key='gp-bell-iot-v1';
+   let config=null,seen='',iotRinging=false,firstRead=true;
+   try{config=JSON.parse(localStorage.getItem(key)||'null')}catch(_){}
+   const relay=$('iotRelay'),secret=$('iotToken'),label=$('iotStatus');
+   if(config){relay.value=config.url||'';secret.value=config.token||''}
+   function valid(){
+     const url=relay.value.trim().replace(/\\/+$/,'');
+     const token=secret.value.trim();
+     if(!/^https:\/\/[^\\s/]+(?:\/[^\\s]*)?$/.test(url)||token.length<32)return null;
+     return {url,token};
+   }
+   $('iotSave').onclick=()=>{
+     const next=valid();
+     if(!next){label.textContent='Enter an HTTPS Worker URL and the same 32+ character secret as the ESP32.';return}
+     config=next;localStorage.setItem(key,JSON.stringify(config));firstRead=true;seen='';label.textContent='Saved. Checking Internet relay…';checkRelay();
+   };
+   async function checkRelay(){
+     if(!config||document.hidden)return;
+     try{
+       const response=await fetch(config.url+'/events',{cache:'no-store',
+         headers:{Authorization:'Bearer '+config.token},signal:AbortSignal.timeout(5500)});
+       if(!response.ok)throw Error('HTTP '+response.status);
+       const packet=await response.json();
+       label.textContent='● IoT Internet relay connected';
+       const event=packet.event;
+       if(event&&typeof event.id==='string'&&Number.isFinite(event.at)){
+         const previous=localStorage.getItem('gp-bell-iot-last-event')||'';
+         if(firstRead){firstRead=false;seen=previous||event.id}
+         if(event.id!==seen&&event.id!==previous&&Date.now()-event.at<90000&&event.at<=Date.now()+10000){
+           seen=event.id;localStorage.setItem('gp-bell-iot-last-event',seen);
+           if(state==='idle'&&!iotRinging){
+             iotRinging=true;
+             state='ringing';update();startRinging();
+             status('🔔 ESP32 Doorbell: कोई दरवाज़े पर है। इस संस्करण में वीडियो और ऑडियो उपलब्ध नहीं।');
+           }
+         }else if(!seen){seen=event.id}
+       }
+     }catch(err){label.textContent='IoT relay offline: '+(err?.message||'connection error')}
+   }
+   setInterval(checkRelay,2500);
+   window.addEventListener('online',checkRelay);
+   window.addEventListener('focus',checkRelay);
+   $('accept').addEventListener('click',()=>{
+     if(iotRinging){iotRinging=false;release();status('ESP32 doorbell acknowledged. Video / two-way audio will be added in the next phase.')}
+   },true);
+   $('hangup').addEventListener('click',()=>{if(iotRinging){iotRinging=false;release();status('Doorbell alert dismissed.')}},true);
+   checkRelay();
+ }
  $('dial').onclick=()=>dial(null);
  $('accept').onclick=async()=>{if(state!=='ringing')return;stopRinging();enableAudio().catch(()=>{});state='answering';update();try{const s=await microphone();if(state!=='answering'){s.getTracks().forEach(t=>t.stop());return}local=s;state='active';native('setCallAudio',true);let call=startMedia(conn,local,'return');setupMedia(call);if(!send({type:'accepted'}))throw Error('disconnected');saveContact(conn);update();status('कॉल जुड़ गई। आपका कैमरा बंद है।')}catch(_){send({type:'rejected'});release();status('माइक्रोफोन की अनुमति जाँचें।')}};
  $('hangup').onclick=()=>{send({type:state==='ringing'?'rejected':'hangup'});release();status('कॉल समाप्त हुई।')};
