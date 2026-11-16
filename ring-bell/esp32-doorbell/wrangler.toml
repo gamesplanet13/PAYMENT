@@ -1,0 +1,10 @@
+name = "games-planet-doorbell"
+main = "cloudflare-worker.js"
+compatibility_date = "2026-11-01"
+
+# After creating a namespace via:
+# npx wrangler kv namespace create RING_EVENTS
+# Add the generated id to the binding below.
+# [[kv_namespaces]]
+# binding = "RING_EVENTS"
+# id = "REPLACE_WITH_YOUR_NAMESPACE_ID"
