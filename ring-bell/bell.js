@@ -199,9 +199,11 @@
    const relay=$('iotRelay'),secret=$('iotToken'),label=$('iotStatus');
    if(config){relay.value=config.url||'';secret.value=config.token||''}
    function valid(){
-     const url=relay.value.trim().replace(/\\/+$/,'');
+     let url=relay.value.trim();
+     while(url.endsWith('/'))url=url.slice(0,-1);
+     let parsed;try{parsed=new URL(url)}catch(_){return null}
      const token=secret.value.trim();
-     if(!/^https:\/\/[^\\s/]+(?:\/[^\\s]*)?$/.test(url)||token.length<32)return null;
+     if(parsed.protocol!=='https:'||!parsed.hostname||token.length<32||token.length>128)return null;
      return {url,token};
    }
    $('iotSave').onclick=()=>{
