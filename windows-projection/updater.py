@@ -6,7 +6,7 @@ import struct
 import subprocess
 from urllib.request import urlopen
 
-VERSION = 2026111601
+VERSION = 2026111602
 RELEASE = 'https://github.com/gamesplanet13/PAYMENT/releases/download/projection-windows-current/'
 ARCH = 'x64' if struct.calcsize('P') == 8 else 'x86'
 

@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -17,8 +18,8 @@ from state import ProjectionState
 from updater import install_after_exit, stage_update
 from lan import ProjectionLAN
 from weather import read_weather
+from web_bundle import PROJECTION_URL as URL, attach_bundle, bundle_root
 
-URL = 'https://gamesplanet13.github.io/PAYMENT/preview.html?desktop=windows'
 APP_DIR = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'GamesPlanetProjection'
 PROFILE = APP_DIR / 'webview-profile'
 IDLE_SECONDS = 60
@@ -82,6 +83,45 @@ def wake_monitor():
     ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000002)
     user32.PostMessageW(0xFFFF, 0x0112, 0xF170, -1)  # SC_MONITORPOWER on
     ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+
+
+def projection_window():
+    bundle = bundle_root()
+    window = webview.create_window('Games Planet Projection', 'about:blank' if bundle else URL,
+                                   maximized=True, background_color='#000000')
+    if bundle:
+        window.events.before_show += lambda: attach_bundle(window, bundle)
+    return window
+
+
+def test_packaged_projection():
+    window = projection_window()
+    result = []
+
+    def check_page():
+        try:
+            ready = window.evaluate_js('''
+                location.origin === 'https://gamesplanet13.github.io' &&
+                !!document.querySelector('meta[name="gp-windows-bundle"]') &&
+                /^\\d{5}$/.test(localStorage.getItem('gp_preview_code_v3') || '') &&
+                typeof window.Peer === 'function' &&
+                typeof window.createQRLan === 'function'
+            ''')
+            result.append(ready)
+        finally:
+            window.destroy()
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as profile:
+        # Ignore the initial blank page. The production app navigates after WebView2 is initialized.
+        def loaded():
+            if (window.get_current_url() or '').startswith(URL):
+                check_page()
+
+        window.events.loaded += loaded
+        webview.start(gui='edgechromium', private_mode=False, storage_path=profile)
+    if result != [True]:
+        raise RuntimeError('The bundled Projection page or scripts did not load')
+
 
 PROBE = r'''(function(){
 try {
@@ -292,7 +332,7 @@ def main():
     os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = (
         os.environ.get('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS','') + ' ' + background_args
     ).strip()
-    app.window=webview.create_window('Games Planet Projection', URL, maximized=True, background_color='#000000')
+    app.window=projection_window()
     app.window.expose(app.request_exit)
     def qr_advertise(code): app.lan.advertise(code)
     def qr_send(identity, payload): app.lan.send(identity, payload)
@@ -308,7 +348,7 @@ def main():
         app.window.evaluate_js("window.addEventListener('keydown', e=>{if(e.key==='Escape'||e.key==='BrowserBack'||(e.altKey&&e.key==='ArrowLeft')){e.preventDefault();e.stopImmediatePropagation();window.pywebview?.api?.request_exit()}},true)")
     app.window.events.loaded += on_loaded
     try:
-        webview.start(app.loop, private_mode=False, storage_path=str(PROFILE))
+        webview.start(app.loop, gui='edgechromium', private_mode=False, storage_path=str(PROFILE))
     finally:
         app.running=False
         app.lan.close()
@@ -319,5 +359,6 @@ if __name__=='__main__':
     if '--self-test' in sys.argv:
         marker, idle = get_input()
         assert isinstance(marker, int) and idle >= 0
+        test_packaged_projection()
     else:
         main()
