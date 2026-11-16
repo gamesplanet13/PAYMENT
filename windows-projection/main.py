@@ -14,6 +14,7 @@ import winreg
 import webview
 import pystray
 from PIL import Image, ImageDraw
+from gurbani_discovery import advertise_gurbani, process_start_ticks
 from state import ProjectionState
 from updater import install_after_exit, stage_update
 from lan import ProjectionLAN
@@ -269,6 +270,8 @@ class App:
         # Keep the PC awake to receive payments, but allow the display to turn off.
         kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
         self.lan.start()
+        threading.Thread(target=advertise_gurbani, args=(APP_DIR.parent / 'Gurbani' / 'Discovery', self.lan),
+                         daemon=True).start()
         threading.Thread(target=self.tray_loop,daemon=True).start()
         threading.Thread(target=self.input_loop,daemon=True).start()
         if getattr(sys, 'frozen', False):
@@ -359,6 +362,7 @@ if __name__=='__main__':
     if '--self-test' in sys.argv:
         marker, idle = get_input()
         assert isinstance(marker, int) and idle >= 0
+        assert process_start_ticks(os.getpid())
         test_packaged_projection()
     else:
         main()
